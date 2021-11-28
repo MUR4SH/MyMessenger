@@ -1,0 +1,7 @@
+database:
+    address: "localhost:5432"
+    username: "messenger_server"
+    password: "Bn6#P6s:%K%rE{z'"
+    database: "messenger_server"
+web:
+    port: "8484"
