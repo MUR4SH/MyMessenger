@@ -12,13 +12,15 @@ import (
 type Config struct {
 	Database struct {
 		Address  string `yaml:"address"`
-		Username string `yaml:"username"`
-		Password string `yaml:"password"`
 		Database string `yaml:"database"`
+		Messages string `yaml:"messages"`
+		Users    string `yaml:"users"`
+		Files    string `yaml:"files"`
+		Chats    string `yaml:"chats"`
 	}
 	API struct {
 		Port string `yaml:"port"`
-	} `yaml:"api"`
+	} `yaml:"web"`
 }
 
 func main() {
@@ -35,7 +37,7 @@ func main() {
 	}
 	confFile.Close()
 
-	dbInterface := databaseInterface.New(config.Database.Address, config.Database.Username, config.Database.Password, config.Database.Database)
+	dbInterface := databaseInterface.New(config.Database.Address, config.Database.Database, config.Database.Messages, config.Database.Users, config.Database.Files, config.Database.Chats)
 
 	serverAndHandlers.InitServer(config.API.Port, &dbInterface)
 

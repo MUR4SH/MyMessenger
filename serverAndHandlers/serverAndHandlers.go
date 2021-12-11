@@ -12,75 +12,13 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/WeWillRenameIT/iot_server/databaseInterface"
+	"github.com/MUR4SH/MyMessenger/databaseInterface"
+	"github.com/MUR4SH/MyMessenger/structures"
 )
 
 //Карта авторизованных пользователей строка - токен, значение - id
-var users map[string]int
+var users map[string]string
 var dbInterface *databaseInterface.DatabaseInterface
-
-type TokenJson struct {
-	Token string `json:"token"`
-}
-
-type Chat struct {
-	Id             string `json: "id"`
-	Users_array    []int  `json: "users_array"`
-	Messages_array []int  `json: "messages_array"`
-	Files_array    []int  `json: "files_array"`
-	Options        struct {
-		Chat_name    string `json: "chat_name"`
-		Chat_logo    int    `json: "chat_logo"`
-		Hide_users   bool   `json: "hide_users"`
-		Invites_only bool   `json: "invites_only"`
-	} `json: "options"`
-	Admins_array  []int `json: "admins_array"`
-	Invited_array []int `json: "invited_array"`
-	Banned_array  []int `json: "banned_array"`
-}
-
-type Files struct {
-	Id   string `json: "id"`
-	Name string `json: "name"`
-	Type string `json: "type"`
-	Url  string `json: "url"`
-}
-
-type UserAuthorise struct {
-	Login    string `json: "login"`
-	Password string `json: "password"`
-}
-
-type User struct {
-	Id           string `json: "id"`
-	Login        string `json: "login"`
-	Password     string `json: "password"`
-	Key          string `json: "key"`
-	Email        string `json: "email"`
-	Phone        int    `json: "phone"`
-	Chats_array  []int  `json: "chats_array"`
-	Photos_array []int  `json: "photos_array"`
-	Status       string `json: "status"`
-	About        string `json: "about"`
-	Keys_array   []struct {
-		Chat_id string `json: "chat_id"`
-		Key     string `json: "key"`
-	} `json: "keys_array"`
-	Devices_array []string `json: "devices_array"`
-}
-
-type Message struct {
-	Id             string   `json: "id"`
-	Gtm_date       string   `json: "gtm_date"`
-	User_id        string   `json: "user_id"`
-	Text           string   `json: "text"`
-	Files_array    []string `json: "files_array"`
-	Resend_array   []string `json: "resend_array"`
-	Replied_id     string   `json: "replied_id"`
-	Comments_array []string `json: "comments_array"`
-	Chat_id        string   `json: "chat_id"`
-	Hidden_login   string   `json: "hidden_login"`
-}
 
 func enableCors(w *http.ResponseWriter) {
 	(*w).Header().Set("Access-Control-Allow-Origin", "*")
@@ -97,20 +35,8 @@ func GetSHA256Hash(text string) string {
 	return hex.EncodeToString(sha.Sum(nil))
 }
 
-//Функция проверки гет-токена
-func verifyGetToken(r *http.Request) bool {
-	r.ParseForm()
-	if r.URL.Query().Has("token") {
-		token := r.URL.Query().Get("token")
-		if _, ok := users[token]; ok {
-			return true
-		}
-	}
-	return false
-}
-
-//Функция проверки текстового-токена
-func verifyPostToken(m string) bool {
+//Функция проверки токена
+func verifyToken(m string) bool {
 	if m != "" {
 		token := m
 		if _, ok := users[token]; ok {
@@ -120,22 +46,148 @@ func verifyPostToken(m string) bool {
 	return false
 }
 
-//Получаем пользователей
-func getUser(w http.ResponseWriter, r *http.Request) {
+//Получаем пользователей чата
+func getUsersOfChat(w http.ResponseWriter, r *http.Request) {
+	log.Print(" Getting users of chat\n")
+
 	enableCors(&w)
-	if !verifyGetToken(r) {
+	if !r.URL.Query().Has("token") || !r.URL.Query().Has("limit") || !r.URL.Query().Has("offset") || !r.URL.Query().Has("chat_id") {
+		w.WriteHeader(400)
+		fmt.Fprintf(w, "400")
+		return
+	}
+
+	if !verifyToken(r.URL.Query().Get("token")) {
 		w.WriteHeader(500)
 		fmt.Fprintf(w, "500")
 		return
 	}
 
-	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
-	if limit <= 0 {
-		limit = 100
+	offset, err := strconv.Atoi(r.URL.Query().Get("offset"))
+	if err != nil {
+		w.WriteHeader(200)
+		fmt.Fprintf(w, "offset error")
+		return
 	}
 
-	arr := dbInterface.GetUser(limit, offset)
+	limit, err := strconv.Atoi(r.URL.Query().Get("limit"))
+	if err != nil {
+		w.WriteHeader(200)
+		fmt.Fprintf(w, "limit error")
+		return
+	}
+
+	arr, err := dbInterface.GetUsersOfChat(r.URL.Query().Get("chat_id"), limit, offset)
+	b, _ := json.Marshal(arr.Users_array)
+	w.WriteHeader(200)
+	fmt.Fprintf(w, string(b))
+}
+
+//Получаем чаты пользователя
+func getUsersChats(w http.ResponseWriter, r *http.Request) {
+	log.Print(" Getting chats of user\n")
+
+	enableCors(&w)
+	if !r.URL.Query().Has("token") || !r.URL.Query().Has("limit") || !r.URL.Query().Has("offset") {
+		w.WriteHeader(400)
+		fmt.Fprintf(w, "400")
+		return
+	}
+
+	if !verifyToken(r.URL.Query().Get("token")) {
+		w.WriteHeader(500)
+		fmt.Fprintf(w, "500")
+		return
+	}
+
+	offset, err := strconv.Atoi(r.URL.Query().Get("offset"))
+	if err != nil {
+		w.WriteHeader(200)
+		fmt.Fprintf(w, "offset error")
+		return
+	}
+
+	limit, err := strconv.Atoi(r.URL.Query().Get("limit"))
+	if err != nil {
+		w.WriteHeader(200)
+		fmt.Fprintf(w, "limit error")
+		return
+	}
+
+	arr, err := dbInterface.GetUsersChats(users[r.URL.Query().Get("token")], limit, offset)
+	b, _ := json.Marshal(arr.Chats_array)
+	w.WriteHeader(200)
+	fmt.Fprintf(w, string(b))
+}
+
+//Получить чат
+func getChat(w http.ResponseWriter, r *http.Request) {
+	log.Print(" Getting chat info\n")
+
+	enableCors(&w)
+	if !r.URL.Query().Has("token") || !r.URL.Query().Has("chat_id") {
+		w.WriteHeader(400)
+		fmt.Fprintf(w, "400")
+		return
+	}
+
+	if !verifyToken(r.URL.Query().Get("token")) {
+		w.WriteHeader(500)
+		fmt.Fprintf(w, "500")
+		return
+	}
+
+	arr, err := dbInterface.GetChat(r.URL.Query().Get("chat_id"))
+	if err != nil {
+		w.WriteHeader(200)
+		fmt.Fprintf(w, err.Error())
+		return
+	}
+	arr.Options.Security_keys = nil
+	arr.Banned_array = nil
+	arr.Invited_array = nil
+	b, _ := json.Marshal(arr)
+	w.WriteHeader(200)
+	fmt.Fprintf(w, string(b))
+}
+
+//Получаем сообщения чата
+func getMessages(w http.ResponseWriter, r *http.Request) {
+	log.Print(" Getting messages of chat\n")
+
+	enableCors(&w)
+	if !r.URL.Query().Has("token") || !r.URL.Query().Has("limit") || !r.URL.Query().Has("offset") || !r.URL.Query().Has("chat_id") {
+		w.WriteHeader(400)
+		fmt.Fprintf(w, "400")
+		return
+	}
+
+	if !verifyToken(r.URL.Query().Get("token")) {
+		w.WriteHeader(500)
+		fmt.Fprintf(w, "500")
+		return
+	}
+
+	offset, err := strconv.Atoi(r.URL.Query().Get("offset"))
+	if err != nil {
+		w.WriteHeader(200)
+		fmt.Fprintf(w, "offset error")
+		return
+	}
+
+	limit, err := strconv.Atoi(r.URL.Query().Get("limit"))
+	if err != nil {
+		w.WriteHeader(200)
+		fmt.Fprintf(w, "limit error")
+		return
+	}
+
+	arr, err := dbInterface.GetMessages(r.URL.Query().Get("chat_id"), limit, offset)
+	if err != nil {
+		w.WriteHeader(200)
+		fmt.Fprintf(w, err.Error())
+		return
+	}
 	b, _ := json.Marshal(arr)
 	w.WriteHeader(200)
 	fmt.Fprintf(w, string(b))
@@ -163,11 +215,13 @@ func generateString() string {
 
 //Авторизация
 func authoriseUser(w http.ResponseWriter, r *http.Request) {
+	log.Print(" Authorising\n")
+
 	enableCors(&w)
 	if (*r).Method == "OPTIONS" {
 		return
 	}
-	var m UserAuthorise
+	var m structures.UserAuthorise
 	b, err := ioutil.ReadAll(r.Body)
 	defer r.Body.Close()
 	if err != nil {
@@ -179,38 +233,42 @@ func authoriseUser(w http.ResponseWriter, r *http.Request) {
 	// Unmarshal
 	err = json.Unmarshal(b, &m)
 	if err != nil {
-		w.WriteHeader(400)
+		w.WriteHeader(404)
 		http.Error(w, err.Error(), 404)
 		return
 	}
-	id := dbInterface.VerifyLoginPass(m.Login, GetSHA256Hash(m.Password))
+	id, err := dbInterface.Authorise(m.Login, GetSHA256Hash(m.Password))
 
-	for k, e := range users {
-		if e == id {
-			delete(users, k)
-			break
+	if err != nil {
+		w.WriteHeader(400)
+		http.Error(w, err.Error(), 400)
+		return
+	}
+
+	/*
+		for k, e := range users {
+			if e == id {
+				delete(users, k)
+				break
+			}
 		}
-	}
+	*/
 
-	if id > 0 {
-		token := generateString()
-		var t TokenJson
-		t.Token = token
-		b, _ := json.Marshal(t)
-		users[token] = id
-		w.WriteHeader(200)
-		fmt.Fprintf(w, string(b))
-	} else {
-		w.WriteHeader(404)
-		fmt.Fprintf(w, "")
-	}
+	token := generateString()
+	var t structures.TokenJson
+	t.Token = token
+	b, _ = json.Marshal(t) //Делаем json ответ с токеном
+	users[token] = id
+	w.WriteHeader(200)
+	fmt.Fprintf(w, string(b))
 }
 
-//Проверка токена
-func verifyToken(w http.ResponseWriter, r *http.Request) {
+func exit(w http.ResponseWriter, r *http.Request) {
+	log.Print(" Exiting\n")
+
 	enableCors(&w)
 
-	var m TokenJson
+	var m structures.TokenJson
 	b, err := ioutil.ReadAll(r.Body)
 	defer r.Body.Close()
 	if err != nil {
@@ -227,7 +285,47 @@ func verifyToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !verifyPostToken(m.Token) {
+	if !verifyToken(m.Token) {
+		w.WriteHeader(200)
+		fmt.Fprintf(w, "token not found")
+		return
+	}
+
+	for k, e := range users {
+		if e == m.Token {
+			delete(users, k)
+			break
+		}
+	}
+
+	w.WriteHeader(200)
+	fmt.Fprintf(w, "success")
+}
+
+//Проверка токена
+func verifyTokenFunc(w http.ResponseWriter, r *http.Request) {
+	log.Print(" Verifying token\n")
+
+	enableCors(&w)
+
+	var m structures.TokenJson
+	b, err := ioutil.ReadAll(r.Body)
+	defer r.Body.Close()
+	if err != nil {
+		w.WriteHeader(404)
+		http.Error(w, err.Error(), 404)
+		return
+	}
+
+	//Unmarshal
+	err = json.Unmarshal(b, &m)
+	if err != nil {
+		w.WriteHeader(404)
+		http.Error(w, err.Error(), 404)
+		return
+	}
+
+	if !verifyToken(m.Token) {
 		w.WriteHeader(500)
 		fmt.Fprintf(w, "500")
 	} else {
@@ -236,18 +334,65 @@ func verifyToken(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func sendMessage(w http.ResponseWriter, r *http.Request) {
+	log.Print(" Sending message\n")
+
+	enableCors(&w)
+
+	var m structures.MessageJSON
+	b, err := ioutil.ReadAll(r.Body)
+	defer r.Body.Close()
+	if err != nil {
+		w.WriteHeader(404)
+		http.Error(w, err.Error(), 404)
+		return
+	}
+
+	//Unmarshal
+	err = json.Unmarshal(b, &m)
+	if err != nil {
+		w.WriteHeader(404)
+		http.Error(w, err.Error(), 404)
+		return
+	}
+
+	if !verifyToken(m.Token) {
+		w.WriteHeader(500)
+		fmt.Fprintf(w, "500")
+		return
+	}
+
+	res, err := dbInterface.SendMessage(m.Chat_id, users[m.Token], m.Text)
+	if err != nil && !res {
+		w.WriteHeader(200)
+		fmt.Fprintf(w, err.Error())
+		return
+	}
+	w.WriteHeader(200)
+	fmt.Fprintf(w, "success")
+}
+
 //Получаем порт и интерфейс для работы с бд
 func InitServer(port string, db *databaseInterface.DatabaseInterface) {
 	rand.Seed(time.Now().Unix())
 	dbInterface = db
-	users = make(map[string]int)
+	users = make(map[string]string)
 
 	//GET Ручки
-	http.HandleFunc("/user", getUser) //Получить пользователей
+	http.HandleFunc("/usersChats", getUsersChats)   //Получить чаты пользователя
+	http.HandleFunc("/usersOfChat", getUsersOfChat) //Получить пользователей чата
+	http.HandleFunc("/сhat", getChat)               //Получить чат
+	http.HandleFunc("/chatsMessages", getMessages)  //Получить сообщения чата
+	//http.HandleFunc("/users", getUsers)         //Получить пользователей
 
 	//POST Ручки
-	http.HandleFunc("/authorise", authoriseUser)  //Авторизовать
-	http.HandleFunc("/token_verify", verifyToken) //Перепроверить токен
+	http.HandleFunc("/authorise", authoriseUser)     //Авторизовать
+	http.HandleFunc("/exit", exit)                   //Выйти
+	http.HandleFunc("/tokenVerify", verifyTokenFunc) //Перепроверить токен
+	http.HandleFunc("/sendMessage", sendMessage)     //Перепроверить токен
 
+	log.Print(" Starting server\n")
+	log.Print(" Server started\n")
 	log.Fatal(http.ListenAndServe(":"+port, nil)) //Запускаем сервер, оборачиваем в логирование чтоб видеть результат
+	log.Print(" Server finished\n")
 }

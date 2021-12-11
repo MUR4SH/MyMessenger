@@ -1,232 +1,136 @@
 package databaseInterface
 
 import (
-	"github.com/go-pg/pg"
-	"github.com/go-pg/pg/orm"
+	"context"
+	"log"
+	"time"
+
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
+
+	"github.com/MUR4SH/MyMessenger/structures"
 )
 
 type DatabaseInterface struct {
-	db pg.DB
+	clientOptions      options.ClientOptions
+	client             mongo.Client
+	collectionMessages mongo.Collection
+	collectionChats    mongo.Collection
+	collectionUsers    mongo.Collection
+	collectionFiles    mongo.Collection
 }
 
-type Chat struct {
-	Id             string
-	Users_array    []int
-	Messages_array []int
-	Files_array    []int
-	Options        struct {
-		Chat_name    string
-		Chat_logo    int
-		Hide_users   bool
-		Invites_only bool
-	}
-	Admins_array  []int
-	Invited_array []int
-	Banned_array  []int
-}
+func New(address string, database string, coll_messages string, coll_users string, coll_files string, coll_chats string) DatabaseInterface {
+	// Set client options
+	clientOptions := options.Client().ApplyURI(address)
 
-type Files struct {
-	Id   string
-	Name string
-	Type string
-	Url  string
-}
-
-type User struct {
-	Id           string
-	Login        string
-	Password     string
-	Key          string
-	Email        string
-	Phone        int
-	Chats_array  []int
-	Photos_array []int
-	Status       string
-	About        string
-	Keys_array   []struct {
-		Chat_id string
-		Key     string
-	}
-	Devices_array []string
-}
-
-type Message struct {
-	Id             string
-	Gtm_date       string
-	User_id        string
-	Text           string
-	Files_array    []string
-	Resend_array   []string
-	Replied_id     string
-	Comments_array []string
-	Chat_id        string
-	Hidden_login   string
-}
-
-func New(address string, user string, password string, database string) DatabaseInterface {
-	db := pg.Connect(&pg.Options{
-		Addr:     address,
-		User:     user,
-		Password: password,
-		Database: database,
-	})
-
-	return DatabaseInterface{*db}
-}
-
-func (d DatabaseInterface) GetUser(limit int, offset int) []User {
-	var users []User
-	_, err := d.db.Query(&users, `SELECT id, first_name, last_name, patronym, username, role FROM public.user ORDER BY id LIMIT ? OFFSET ?;`, limit, offset)
-
+	// Connect to MongoDB
+	client, err := mongo.Connect(context.TODO(), clientOptions)
 	if err != nil {
 		panic(err)
 	}
 
-	return users
-}
-
-func (d DatabaseInterface) VerifyLoginPass(login string, password string) int {
-	var id int
-	_, err := d.db.Query(&id, `SELECT id FROM public.user WHERE username=? AND password_hash=? AND role>0;`, login, password)
-
+	// Check the connection
+	err = client.Ping(context.TODO(), nil)
 	if err != nil {
 		panic(err)
 	}
 
-	return id
+	// get collection as ref
+	collectionMessages := client.Database(database).Collection(coll_messages)
+	collectionUsers := client.Database(database).Collection(coll_users)
+	collectionFiles := client.Database(database).Collection(coll_files)
+	collectionChats := client.Database(database).Collection(coll_chats)
+	log.Print(" Connected to database\n")
+
+	return DatabaseInterface{*clientOptions, *client, *collectionMessages, *collectionChats, *collectionUsers, *collectionFiles}
 }
 
-func (d DatabaseInterface) AddUser(id int, login string, first_name string, last_name string, patronym string, password string, code string, role int) int {
-	var err error
-	if (d.GetRole(id) == 1 && role < 2) || (d.GetRole(id) == 2) {
-		_, err = d.db.Exec(`INSERT INTO public.user (username, first_name, last_name, patronym, password_hash, code_hash, role) VALUES (?, ?, ?, ?, ?, ?, ?);`, login, first_name, last_name, patronym, password, code, role)
-	}
-
+func (d DatabaseInterface) GetUsersChats(user_id string, limit int, offset int) (structures.User, error) {
+	var res structures.User
+	objectId, err := primitive.ObjectIDFromHex(user_id)
 	if err != nil {
-		return 0
+		log.Println("Invalid id")
 	}
-
-	return 1
+	err = d.collectionUsers.FindOne(context.TODO(), bson.D{{"_id", objectId}}).Decode(&res)
+	return res, err
 }
 
-func (d DatabaseInterface) AddCodelock(id int, name string, description string) int {
-	var err error
-	if d.GetRole(id) >= 1 && name != "" && description != "" {
-		_, err = d.db.Exec(`INSERT INTO public.codelock (name, description) VALUES (?, ?);`, name, description)
-	}
-	if err != nil {
-		return 0
-	}
-
-	return 1
+func (d DatabaseInterface) GetUsers(login string, limit int, offset int) ([]structures.User, error) {
+	var res []structures.User
+	filter := bson.D{primitive.E{Key: "login", Value: login}}
+	err := d.collectionUsers.FindOne(context.TODO(), filter).Decode(&res)
+	return res, err
 }
 
-func (d DatabaseInterface) GetRole(id int) int {
-	var role int
-	_, err := d.db.Query(&role, `SELECT role FROM public.user WHERE id=?;`, id)
-
+func (d DatabaseInterface) GetUsersOfChat(chat_id string, limit int, offset int) (structures.Chat, error) {
+	var res structures.Chat
+	objectId, err := primitive.ObjectIDFromHex(chat_id)
 	if err != nil {
-		panic(err)
+		log.Println("Invalid id")
 	}
-
-	return role
+	err = d.collectionChats.FindOne(context.TODO(), bson.D{{"_id", objectId}}).Decode(&res)
+	return res, err
 }
 
-func (d DatabaseInterface) DeleteUser(id int, user_id int) int {
-	var err error
-	var count int
-	var res orm.Result
-	if (d.GetRole(id) == 2) || (d.GetRole(id) == 1 && d.GetRole(user_id) <= 1) {
-		res, err = d.db.Exec(`DELETE FROM public.user WHERE id=?;`, user_id)
-	} else {
-		return 0
-	}
-
+func (d DatabaseInterface) GetChat(chat_id string) (structures.Chat, error) {
+	var res structures.Chat
+	objectId, err := primitive.ObjectIDFromHex(chat_id)
 	if err != nil {
-		panic(err)
-	} else {
-		count = res.RowsAffected()
-		if count < 1 {
-			return 0
-		}
+		log.Println("Invalid id")
 	}
-
-	return 1
+	err = d.collectionChats.FindOne(context.TODO(), bson.D{{"_id", objectId}}).Decode(&res)
+	return res, err
 }
 
-func (d DatabaseInterface) DeleteCodelock(id int, codelock_id int) int {
-	var err error
-	var count int
-	var res orm.Result
-	if d.GetRole(id) >= 1 {
-		res, err = d.db.Exec(`DELETE FROM public.codelock WHERE id=?;`, codelock_id)
-	} else {
-		return 0
-	}
-
-	if err != nil {
-		panic(err)
-	} else {
-		count = res.RowsAffected()
-		if count < 1 {
-			return 0
+func (d DatabaseInterface) GetMessages(chat_id string, limit int, offset int) ([]structures.Message, error) {
+	var res []structures.Message
+	findOptions := options.Find()
+	findOptions.SetLimit(int64(limit))
+	cur, err := d.collectionMessages.Find(context.TODO(), bson.D{{"chat_id", chat_id}}, findOptions)
+	for cur.Next(context.TODO()) {
+		//Create a value into which the single document can be decoded
+		var elem structures.Message
+		err := cur.Decode(&elem)
+		if err != nil {
+			log.Fatal(err)
 		}
+		res = append(res, elem)
 	}
-
-	return 1
+	return res, err
 }
 
-func (d DatabaseInterface) EditCodelock(id int, codelock_id int, name string, describe string) int {
-	var err error
-	if d.GetRole(id) >= 1 {
-		if name != "" {
-			_, err = d.db.Exec(`UPDATE public.codelock SET name=? WHERE id=?;`, name, codelock_id)
-		}
-		if describe != "" {
-			_, err = d.db.Exec(`UPDATE public.codelock SET description=? WHERE id=?;`, describe, codelock_id)
-		}
-	} else {
-		return 0
-	}
-
-	if err != nil {
-		panic(err)
-	}
-
-	return 1
+func (d DatabaseInterface) Authorise(login string, password string) (string, error) {
+	var res structures.User
+	err := d.collectionUsers.FindOne(context.TODO(), bson.D{{"login", login}, {"password", password}}).Decode(&res)
+	return res.Id, err
 }
 
-func (d DatabaseInterface) EditUser(id int, user_id int, login string, first_name string, last_name string, patronym string, password string, code string, role int) int {
-	var err error
-	if (d.GetRole(id) == 2) || (d.GetRole(id) == 1 && d.GetRole(user_id) <= 1) {
-		if login != "" {
-			_, err = d.db.Exec(`UPDATE public.user SET username=? WHERE id=?;`, login, user_id)
-		}
-		if first_name != "" {
-			_, err = d.db.Exec(`UPDATE public.user SET first_name=? WHERE id=?;`, first_name, user_id)
-		}
-		if last_name != "" {
-			_, err = d.db.Exec(`UPDATE public.user SET last_name=? WHERE id=?;`, last_name, user_id)
-		}
-		if patronym != "" {
-			_, err = d.db.Exec(`UPDATE public.user SET patronym=? WHERE id=?;`, patronym, user_id)
-		}
-		if password != "" {
-			_, err = d.db.Exec(`UPDATE public.user SET password_hash=? WHERE id=?;`, password, user_id)
-		}
-		if code != "" {
-			_, err = d.db.Exec(`UPDATE public.user SET code_hash=? WHERE id=?;`, code, user_id)
-		}
-		if role >= 0 {
-			_, err = d.db.Exec(`UPDATE public.user SET role=? WHERE id=?;`, role, user_id)
-		}
-	} else {
-		return 0
-	}
+func (d DatabaseInterface) SendMessage(chat_id string, user_id string, text string) (bool, error) {
+	time := time.Now().UTC()
+	var msg structures.MessageInsert
+	msg.Chat_id = chat_id
+	msg.Gtm_date = time.Format("2006.01.01 - 03:04:05")
+	msg.Text = text
+	msg.User_id = user_id
 
+	ins, err := d.collectionMessages.InsertOne(context.TODO(), msg)
 	if err != nil {
-		panic(err)
+		return false, err
+	}
+	oid, _ := ins.InsertedID.(primitive.ObjectID)
+	update := bson.D{
+		primitive.E{Key: "$push", Value: bson.D{
+			primitive.E{Key: "messages_array", Value: oid.Hex()},
+		}},
 	}
 
-	return 1
+	objectId, err := primitive.ObjectIDFromHex(chat_id)
+	if err != nil {
+		log.Println("Invalid id")
+	}
+	_, err = d.collectionChats.UpdateOne(context.TODO(), bson.D{{"_id", objectId}}, update)
+	return err == nil, err
 }
