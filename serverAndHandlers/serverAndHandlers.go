@@ -381,15 +381,14 @@ func InitServer(port string, db *databaseInterface.DatabaseInterface) {
 	//GET Ручки
 	http.HandleFunc("/usersChats", getUsersChats)   //Получить чаты пользователя
 	http.HandleFunc("/usersOfChat", getUsersOfChat) //Получить пользователей чата
-	http.HandleFunc("/сhat", getChat)               //Получить чат
+	http.HandleFunc("/сhat", getChat)               //Получить информацию чата
 	http.HandleFunc("/chatsMessages", getMessages)  //Получить сообщения чата
-	//http.HandleFunc("/users", getUsers)         //Получить пользователей
 
 	//POST Ручки
 	http.HandleFunc("/authorise", authoriseUser)     //Авторизовать
 	http.HandleFunc("/exit", exit)                   //Выйти
 	http.HandleFunc("/tokenVerify", verifyTokenFunc) //Перепроверить токен
-	http.HandleFunc("/sendMessage", sendMessage)     //Перепроверить токен
+	http.HandleFunc("/sendMessage", sendMessage)     //Отправить сообщение
 
 	log.Print(" Starting server\n")
 	log.Print(" Server started\n")

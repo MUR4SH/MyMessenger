@@ -112,7 +112,7 @@ func (d DatabaseInterface) SendMessage(chat_id string, user_id string, text stri
 	time := time.Now().UTC()
 	var msg structures.MessageInsert
 	msg.Chat_id = chat_id
-	msg.Gtm_date = time.Format("2006.01.01 - 03:04:05")
+	msg.Gtm_date = time.Format("2006-01-02T15:04:05")
 	msg.Text = text
 	msg.User_id = user_id
 
