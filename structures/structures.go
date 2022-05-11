@@ -1,25 +1,28 @@
 package structures
 
+import "crypto/rsa"
+
 type Chat struct {
 	Id             string `bson:"_id"`
+	Chat_name      string
+	Chat_logo      string
 	Users_array    []string
 	Messages_array []string
 	Files_array    []string
-	Options        struct {
-		Chat_name     string
-		Chat_logo     string
-		Visability    string
-		Hide_users    bool
-		Invites_only  bool
-		Security_keys []struct {
-			User_id     string
-			Public_key  string
-			Private_key string
-		}
-	}
-	Admins_array  []string
-	Invited_array []string
-	Banned_array  []string
+	Options        string
+	Admins_array   []string
+	Invited_array  []string
+	Banned_array   []string
+	Key            *rsa.PublicKey
+}
+
+type Chat_settings struct {
+	Id                     string `bson:"_id"`
+	Secured                bool
+	Search_visible         bool
+	Resend                 bool
+	Users_write_permission bool
+	Personal               bool
 }
 
 type Files struct {
@@ -27,30 +30,41 @@ type Files struct {
 	Name       string
 	Type       string
 	Gtm_date   string
-	Message_id string
+	ExpiredAt  string
+	Message_id *string
 	Url        string
 }
 
+type UserId struct {
+	Id string `bson:"_id"`
+}
+
 type User struct {
-	Id          string `bson:"_id"`
-	Login       string
-	Password    *string
-	Email       *string
-	Phone       *string
-	Chats_array []*struct {
-		Chat_id      string
-		Muted        bool
-		Notification string
-	}
-	Photos_array []string
-	Status       string
-	About        string
-	Keys_array   []*struct {
-		Chat_id     string
-		Public_ley  string
-		Private_key string
-	}
-	Devices_array []*string
+	Id                string `bson:"_id"`
+	Login             string
+	Password          *string
+	Email             *string
+	Phone             *string
+	Chats_array       []*string
+	Photos_array      []*string
+	Status            string
+	About             string
+	Personal_settings string
+}
+
+type Chats_array struct {
+	Id                   string `bson:"_id"`
+	Chat_id              string
+	Notifications        bool
+	Key                  *rsa.PrivateKey
+	Last_messages_number int
+}
+
+type Personal_settings struct {
+	Id            string `bson:"_id"`
+	User_id       string
+	Phone_visible bool
+	Email_visible bool
 }
 
 type Message struct {
@@ -63,7 +77,7 @@ type Message struct {
 	Replied_id     string
 	Comments_array []string
 	Chat_id        string
-	Hidden_login   bool
+	ExpiredAt      string
 }
 
 type MessageInsert struct {
@@ -75,7 +89,6 @@ type MessageInsert struct {
 	Replied_id     string
 	Comments_array []string
 	Chat_id        string
-	Hidden_login   bool
 }
 
 type ID struct {
@@ -87,29 +100,24 @@ type TokenJson struct {
 }
 
 type ChatJSON struct {
-	Token          string   `json:"token"`
-	Id             string   `json:"id"`
-	Users_array    []string `json:"users_array"`
-	Messages_array []string `json:"messages_array"`
-	Files_array    []string `json:"files_array"`
-	Options        struct {
-		Chat_name    string `json:"chat_name"`
-		Chat_logo    string `json:"chat_logo"`
-		Muted        bool   `json:"muted"`
-		Hide_users   bool   `json:"hide_users"`
-		Invites_only bool   `json:"invites_only"`
-	} `json:"options"`
-	Admins_array  []string `json:"admins_array"`
-	Invited_array []string `json:"invited_array"`
-	Banned_array  []string `json:"banned_array"`
+	Id             string        `json:"id"`
+	Chat_name      string        `json:"chat_name"`
+	Chat_logo      string        `json:"chat_logo"`
+	Users_array    []string      `json:"users_array"`
+	Messages_array []string      `json:"messages_array"`
+	Files_array    []string      `json:"files_array"`
+	Options        string        `json:"options"`
+	Admins_array   []string      `json:"admins_array"`
+	Invited_array  []string      `json:"invited_array"`
+	Banned_array   []string      `json:"banned_array"`
+	Key            rsa.PublicKey `json:"key"`
 }
 
 type FilesJSON struct {
-	Token string `json:"token"`
-	Id    string `json:"id"`
-	Name  string `json:"name"`
-	Type  string `json:"type"`
-	Url   string `json:"url"`
+	Id   string `json:"id"`
+	Name string `json:"name"`
+	Type string `json:"type"`
+	Url  string `json:"url"`
 }
 
 type UserAuthorise struct {
@@ -117,31 +125,25 @@ type UserAuthorise struct {
 	Password string `json:"password"`
 }
 
+type TokenStore struct {
+	Id   string
+	Date string
+}
+
 type UserJSON struct {
-	Token       string `json:"token"`
-	Id          string `json:"id"`
-	Login       string `json:"login"`
-	Password    string `json:"password"`
-	Email       string `json:"email"`
-	Phone       string `json:"phone"`
-	Chats_array []struct {
-		Id           string `json:"string"`
-		Muted        bool   `json:"muted"`
-		Notification string `json:"notification"`
-	} `json:"chats_array"`
-	Photos_array []string `json:"photos_array"`
-	Status       string   `json:"status"`
-	About        string   `json:"about"`
-	Keys_array   []struct {
-		Chat_id     string `json:"chat_id"`
-		Private_key string `json:"private_key"`
-		Public_key  string `json:"public_key"`
-	} `json:"keys_array"`
-	Devices_array []string `json:"devices_array"`
+	Id                string   `json:"id"`
+	Login             string   `json:"login"`
+	Password          string   `json:"password"`
+	Email             string   `json:"email"`
+	Phone             string   `json:"phone"`
+	Chats_array       []string `json:"chats_array"`
+	Photos_array      []string `json:"photos_array"`
+	Status            string   `json:"status"`
+	About             string   `json:"about"`
+	Personal_settings string   `json:"personal_settings"`
 }
 
 type MessageJSON struct {
-	Token          string   `json:"token"`
 	Id             string   `json:"id"`
 	Gtm_date       string   `json:"gtm_date"`
 	User_id        string   `json:"user_id"`
@@ -151,5 +153,17 @@ type MessageJSON struct {
 	Replied_id     string   `json:"replied_id"`
 	Comments_array []string `json:"comments_array"`
 	Chat_id        string   `json:"chat_id"`
-	Hidden_login   string   `json:"hidden_login"`
+	ExpiredAt      string   `json:"expired_at"`
+}
+
+type ChatCreationJSON struct {
+	User_id                string   `json:"user_id"`
+	Name                   string   `json:"name"`
+	Logo                   []byte   `json:"logo"`
+	Users                  []string `json:"users"`
+	Secured                bool     `json:"secured"`
+	Search_visible         bool     `json:"search_visible"`
+	Resend                 bool     `json:"resend"`
+	Users_write_permission bool     `json:"users_write_permission"`
+	Personal               bool     `json:"personal"`
 }

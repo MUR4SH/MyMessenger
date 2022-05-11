@@ -1,13 +1,15 @@
 package serverAndHandlers
 
 import (
+	"crypto/rand"
+	"crypto/rsa"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"log"
-	"math/rand"
+	mrand "math/rand"
 	"net/http"
 	"strconv"
 	"time"
@@ -17,13 +19,45 @@ import (
 )
 
 //Карта авторизованных пользователей строка - токен, значение - id
-var users map[string]string
+var users map[string]structures.TokenStore
+
+//Карта времени удаления пользователей, где ключ - время создания, значение - массив токенов
+var delete_users map[string][]string
+
 var dbInterface *databaseInterface.DatabaseInterface
+
+const COOKIE_NAME = "token"
+
+//Удаляем токены пользователей раз в час
+func timeoutTokens() {
+	log.Print("Initiate deleting timeout tokens\n")
+	for {
+		log.Print("Deleting timeout tokens\n")
+		//Получаем дату создания записи методом текущая дата минус 23 часа
+		//Чтобы не удалить только что созданные записи
+		pastDate := (time.Now().UTC().Add(-23 * time.Hour)).Format("2006-01-02 15")
+		counter := 0
+
+		if arr, ok := delete_users[pastDate]; ok && len(arr) > 0 {
+			for i := 0; i < len(arr); i++ {
+				deleteUser(arr[i])
+				counter++
+			}
+			if len(delete_users[pastDate]) == 0 {
+				delete(delete_users, pastDate)
+			}
+		}
+
+		log.Print(counter, " token(-s) has(-ve) been deleted\n")
+		//Ждем один час для повтора
+		time.Sleep(time.Hour)
+	}
+}
 
 func enableCors(w *http.ResponseWriter) {
 	(*w).Header().Set("Access-Control-Allow-Origin", "*")
 	(*w).Header().Set("Access-Control-Allow-Credentials", "true")
-	(*w).Header().Set("Access-Control-Allow-Methods", "DELETE, POST, GET, OPTIONS")
+	(*w).Header().Set("Access-Control-Allow-Methods", "POST, GET")
 	(*w).Header().Set("Access-Control-Max-Age", "1000")
 	(*w).Header().Set("Access-Control-Allow-Headers", "Access-Control-Allow-Headers, Origin,Accept, X-Requested-With, Content-Type, Access-Control-Request-Method, Access-Control-Request-Headers")
 }
@@ -35,10 +69,36 @@ func GetSHA256Hash(text string) string {
 	return hex.EncodeToString(sha.Sum(nil))
 }
 
-//Функция проверки токена
-func verifyToken(m string) bool {
-	if m != "" {
-		token := m
+//Обновляет и возвращает токен, обёрнутый в json
+func updateToken(token string) structures.TokenJson {
+	id := users[token].Id
+	deleteUser(token)
+	return createUser(id)
+}
+
+//Создает запись в картах и возвращает токен, обёрнутый в json
+func createUser(id string) structures.TokenJson {
+	var t structures.TokenJson
+	t.Token = generateString()
+	date := (time.Now().UTC()).Format("2006-01-02 15")
+
+	users[t.Token] = structures.TokenStore{Id: id, Date: date}
+
+	if _, ok := delete_users[date]; ok {
+		delete_users[date] = append(delete_users[date], t.Token)
+	} else {
+		delete_users[date] = []string{t.Token}
+	}
+
+	return t
+}
+
+//Функция проверки токена из кук
+func verifyToken(c *http.Cookie, e error) bool {
+	//TODO: добавить проверку что если дата создания > 12 часов назад, то обновить куку
+	//curDate := (time.Now().UTC().Add(-23 * time.Hour)).Format("2006-01-02 15")
+	token := c.Value
+	if token != "" {
 		if _, ok := users[token]; ok {
 			return true
 		}
@@ -46,18 +106,39 @@ func verifyToken(m string) bool {
 	return false
 }
 
+func deleteUser(token string) {
+	array := delete_users[token]
+	var new_array []string
+
+	for i := 0; i < len(array); i++ {
+		if array[i] != users[token].Id {
+			new_array = append(new_array, array[i])
+		}
+	}
+
+	//Удаляем из карты отслеживания времени
+	delete_users[token] = new_array
+	//Удаляем из карты пользователей
+	delete(users, token)
+}
+
+//Получаем токен из куки и удаляем пользователя
+func deleteUserByCookie(c *http.Cookie, e error) {
+	deleteUser(c.Value)
+}
+
 //Получаем пользователей чата
 func getUsersOfChat(w http.ResponseWriter, r *http.Request) {
 	log.Print(" Getting users of chat\n")
 
 	enableCors(&w)
-	if !r.URL.Query().Has("token") || !r.URL.Query().Has("limit") || !r.URL.Query().Has("offset") || !r.URL.Query().Has("chat_id") {
+	if !r.URL.Query().Has("limit") || !r.URL.Query().Has("offset") || !r.URL.Query().Has("chat_id") {
 		w.WriteHeader(400)
 		fmt.Fprintf(w, "400")
 		return
 	}
 
-	if !verifyToken(r.URL.Query().Get("token")) {
+	if !verifyToken(r.Cookie(COOKIE_NAME)) {
 		w.WriteHeader(500)
 		fmt.Fprintf(w, "500")
 		return
@@ -77,7 +158,7 @@ func getUsersOfChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	arr, err := dbInterface.GetUsersOfChat(r.URL.Query().Get("chat_id"), limit, offset)
+	arr, _ := dbInterface.GetUsersOfChat(r.URL.Query().Get("chat_id"), limit, offset)
 	b, _ := json.Marshal(arr.Users_array)
 	w.WriteHeader(200)
 	fmt.Fprintf(w, string(b))
@@ -88,13 +169,13 @@ func getUsersChats(w http.ResponseWriter, r *http.Request) {
 	log.Print(" Getting chats of user\n")
 
 	enableCors(&w)
-	if !r.URL.Query().Has("token") || !r.URL.Query().Has("limit") || !r.URL.Query().Has("offset") {
+	if !r.URL.Query().Has("limit") || !r.URL.Query().Has("offset") {
 		w.WriteHeader(400)
 		fmt.Fprintf(w, "400")
 		return
 	}
 
-	if !verifyToken(r.URL.Query().Get("token")) {
+	if !verifyToken(r.Cookie(COOKIE_NAME)) {
 		w.WriteHeader(500)
 		fmt.Fprintf(w, "500")
 		return
@@ -114,8 +195,21 @@ func getUsersChats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	arr, err := dbInterface.GetUsersChats(users[r.URL.Query().Get("token")], limit, offset)
-	b, _ := json.Marshal(arr.Chats_array)
+	c, _ := r.Cookie(COOKIE_NAME)
+
+	arr, err := dbInterface.GetUsersChats(
+		users[c.Value].Id,
+		limit,
+		offset,
+	)
+
+	if err != nil {
+		w.WriteHeader(503)
+		fmt.Fprintf(w, "Error getting messages")
+		return
+	}
+
+	b, _ := json.Marshal(arr)
 	w.WriteHeader(200)
 	fmt.Fprintf(w, string(b))
 }
@@ -125,13 +219,13 @@ func getChat(w http.ResponseWriter, r *http.Request) {
 	log.Print(" Getting chat info\n")
 
 	enableCors(&w)
-	if !r.URL.Query().Has("token") || !r.URL.Query().Has("chat_id") {
+	if !r.URL.Query().Has("chat_id") {
 		w.WriteHeader(400)
 		fmt.Fprintf(w, "400")
 		return
 	}
 
-	if !verifyToken(r.URL.Query().Get("token")) {
+	if !verifyToken(r.Cookie(COOKIE_NAME)) {
 		w.WriteHeader(500)
 		fmt.Fprintf(w, "500")
 		return
@@ -143,7 +237,7 @@ func getChat(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, err.Error())
 		return
 	}
-	arr.Options.Security_keys = nil
+	arr.Key = nil
 	arr.Banned_array = nil
 	arr.Invited_array = nil
 	b, _ := json.Marshal(arr)
@@ -156,13 +250,13 @@ func getMessages(w http.ResponseWriter, r *http.Request) {
 	log.Print(" Getting messages of chat\n")
 
 	enableCors(&w)
-	if !r.URL.Query().Has("token") || !r.URL.Query().Has("limit") || !r.URL.Query().Has("offset") || !r.URL.Query().Has("chat_id") {
+	if !r.URL.Query().Has("limit") || !r.URL.Query().Has("offset") || !r.URL.Query().Has("chat_id") {
 		w.WriteHeader(400)
 		fmt.Fprintf(w, "400")
 		return
 	}
 
-	if !verifyToken(r.URL.Query().Get("token")) {
+	if !verifyToken(r.Cookie(COOKIE_NAME)) {
 		w.WriteHeader(500)
 		fmt.Fprintf(w, "500")
 		return
@@ -199,9 +293,9 @@ func generateString() string {
 	bl := true
 	for bl {
 		charSet := "abcdedfghijklmnopqrstABCDEFGHIJKLMNOP1234567890"
-		length := rand.Intn(20) + 20
+		length := mrand.Intn(20) + 20
 		for i := 0; i < length; i++ {
-			random := rand.Intn(len(charSet))
+			random := mrand.Intn(len(charSet))
 			str += string(charSet[random])
 		}
 		if _, ok := users[str]; ok {
@@ -218,26 +312,10 @@ func authoriseUser(w http.ResponseWriter, r *http.Request) {
 	log.Print(" Authorising\n")
 
 	enableCors(&w)
-	if (*r).Method == "OPTIONS" {
-		return
-	}
+
 	var m structures.UserAuthorise
 	b, err := ioutil.ReadAll(r.Body)
 	defer r.Body.Close()
-	if err != nil {
-		w.WriteHeader(404)
-		http.Error(w, err.Error(), 404)
-		return
-	}
-
-	// Unmarshal
-	err = json.Unmarshal(b, &m)
-	if err != nil {
-		w.WriteHeader(404)
-		http.Error(w, err.Error(), 404)
-		return
-	}
-	id, err := dbInterface.Authorise(m.Login, GetSHA256Hash(m.Password))
 
 	if err != nil {
 		w.WriteHeader(400)
@@ -245,20 +323,23 @@ func authoriseUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	/*
-		for k, e := range users {
-			if e == id {
-				delete(users, k)
-				break
-			}
-		}
-	*/
+	// Unmarshal
+	err = json.Unmarshal(b, &m)
+	if err != nil {
+		w.WriteHeader(400)
+		http.Error(w, err.Error(), 400)
+		return
+	}
+	id, err := dbInterface.Authorise(m.Login, GetSHA256Hash(m.Password))
 
-	token := generateString()
-	var t structures.TokenJson
-	t.Token = token
-	b, _ = json.Marshal(t) //Делаем json ответ с токеном
-	users[token] = id
+	if err != nil {
+		w.WriteHeader(503)
+		log.Print(err)
+		http.Error(w, "Authorising error", 503)
+		return
+	}
+
+	b, _ = json.Marshal(createUser(id)) //Делаем json ответ с токеном
 	w.WriteHeader(200)
 	fmt.Fprintf(w, string(b))
 }
@@ -272,8 +353,8 @@ func exit(w http.ResponseWriter, r *http.Request) {
 	b, err := ioutil.ReadAll(r.Body)
 	defer r.Body.Close()
 	if err != nil {
-		w.WriteHeader(404)
-		http.Error(w, err.Error(), 404)
+		w.WriteHeader(400)
+		http.Error(w, err.Error(), 400)
 		return
 	}
 
@@ -285,18 +366,13 @@ func exit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !verifyToken(m.Token) {
-		w.WriteHeader(200)
+	if !verifyToken(r.Cookie(COOKIE_NAME)) {
+		w.WriteHeader(400)
 		fmt.Fprintf(w, "token not found")
 		return
 	}
 
-	for k, e := range users {
-		if e == m.Token {
-			delete(users, k)
-			break
-		}
-	}
+	deleteUserByCookie(r.Cookie(COOKIE_NAME))
 
 	w.WriteHeader(200)
 	fmt.Fprintf(w, "success")
@@ -325,7 +401,7 @@ func verifyTokenFunc(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !verifyToken(m.Token) {
+	if !verifyToken(r.Cookie(COOKIE_NAME)) {
 		w.WriteHeader(500)
 		fmt.Fprintf(w, "500")
 	} else {
@@ -356,13 +432,15 @@ func sendMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !verifyToken(m.Token) {
+	if !verifyToken(r.Cookie(COOKIE_NAME)) {
 		w.WriteHeader(500)
 		fmt.Fprintf(w, "500")
 		return
 	}
 
-	res, err := dbInterface.SendMessage(m.Chat_id, users[m.Token], m.Text)
+	c, _ := r.Cookie(COOKIE_NAME)
+
+	res, err := dbInterface.SendMessage(m.Chat_id, users[c.Value].Id, m.Text)
 	if err != nil && !res {
 		w.WriteHeader(200)
 		fmt.Fprintf(w, err.Error())
@@ -372,23 +450,92 @@ func sendMessage(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "success")
 }
 
+//Ручка создания чата
+func createChat(w http.ResponseWriter, r *http.Request) {
+	log.Print(" Creating chat\n")
+
+	enableCors(&w)
+	var m structures.ChatCreationJSON
+	b, err := ioutil.ReadAll(r.Body)
+	defer r.Body.Close()
+	if err != nil {
+		w.WriteHeader(400)
+		http.Error(w, err.Error(), 400)
+		return
+	}
+
+	//Unmarshal
+	err = json.Unmarshal(b, &m)
+	if err != nil {
+		w.WriteHeader(400)
+		http.Error(w, err.Error(), 400)
+		return
+	}
+
+	//Verivying token
+	if !verifyToken(r.Cookie(COOKIE_NAME)) {
+		w.WriteHeader(500)
+		fmt.Fprintf(w, "500")
+		return
+	}
+
+	//Getting token
+	c, _ := r.Cookie(COOKIE_NAME)
+	var logo_id string
+
+	if m.Logo != nil {
+		//TODO процесс преобразования файла и его сохранение в директорию files
+		logo_id, err = dbInterface.CreateFile(users[c.Value].Id, m.Logo)
+	}
+
+	key, _ := rsa.GenerateKey(rand.Reader, 50)
+
+	//Создаем чат (файл)
+	res, err := dbInterface.CreateChat(
+		users[c.Value].Id,
+		m.Name,
+		logo_id,
+		m.Users,
+		key,           //Приватный ключ
+		key.PublicKey, //Публичный ключ
+		m.Secured,
+		m.Search_visible,
+		m.Resend,
+		m.Users_write_permission,
+		m.Personal,
+	)
+	if err != nil {
+		w.WriteHeader(200)
+		fmt.Fprintf(w, err.Error())
+		return
+	}
+
+	w.WriteHeader(200)
+	fmt.Fprintf(w, res)
+}
+
 //Получаем порт и интерфейс для работы с бд
 func InitServer(port string, db *databaseInterface.DatabaseInterface) {
-	rand.Seed(time.Now().Unix())
+	mrand.Seed(time.Now().Unix())
 	dbInterface = db
-	users = make(map[string]string)
+	users = make(map[string]structures.TokenStore)
+	delete_users = make(map[string][]string)
+
+	go timeoutTokens() //Запускаем функцию на проверку актуальности токенов в отдельном потоке
 
 	//GET Ручки
 	http.HandleFunc("/usersChats", getUsersChats)   //Получить чаты пользователя
 	http.HandleFunc("/usersOfChat", getUsersOfChat) //Получить пользователей чата
 	http.HandleFunc("/сhat", getChat)               //Получить информацию чата
 	http.HandleFunc("/chatsMessages", getMessages)  //Получить сообщения чата
+	//TODO: гет-ручка обновления токена
 
 	//POST Ручки
 	http.HandleFunc("/authorise", authoriseUser)     //Авторизовать
 	http.HandleFunc("/exit", exit)                   //Выйти
 	http.HandleFunc("/tokenVerify", verifyTokenFunc) //Перепроверить токен
 	http.HandleFunc("/sendMessage", sendMessage)     //Отправить сообщение
+	http.HandleFunc("/createChat", createChat)       //Отправить сообщение
 
 	log.Print(" Starting server\n")
 	log.Print(" Server started\n")

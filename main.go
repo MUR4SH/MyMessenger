@@ -11,12 +11,15 @@ import (
 
 type Config struct {
 	Database struct {
-		Address  string `yaml:"address"`
-		Database string `yaml:"database"`
-		Messages string `yaml:"messages"`
-		Users    string `yaml:"users"`
-		Files    string `yaml:"files"`
-		Chats    string `yaml:"chats"`
+		Address          string `yaml:"address"`
+		Database         string `yaml:"database"`
+		Messages         string `yaml:"messages"`
+		Users            string `yaml:"users"`
+		Chats            string `yaml:"chats"`
+		Files            string `yaml:"files"`
+		ChatSettings     string `yaml:"chat_settings"`
+		ChatsArray       string `yaml:"chats_array"`
+		PersonalSettings string `yaml:"personal_settings"`
 	}
 	API struct {
 		Port string `yaml:"port"`
@@ -37,7 +40,17 @@ func main() {
 	}
 	confFile.Close()
 
-	dbInterface := databaseInterface.New(config.Database.Address, config.Database.Database, config.Database.Messages, config.Database.Users, config.Database.Files, config.Database.Chats)
+	dbInterface := databaseInterface.New(
+		config.Database.Address,
+		config.Database.Database,
+		config.Database.Messages,
+		config.Database.Users,
+		config.Database.Chats,
+		config.Database.Files,
+		config.Database.ChatSettings,
+		config.Database.ChatsArray,
+		config.Database.PersonalSettings,
+	)
 
 	serverAndHandlers.InitServer(config.API.Port, &dbInterface)
 

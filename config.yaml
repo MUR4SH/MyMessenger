@@ -1,9 +1,12 @@
 database:
-    address: "mongodb+srv://alexMessengerAdmin:alex_password@alexmessenger.0tqg5.mongodb.net/test?authSource=admin&replicaSet=atlas-cdqgma-shard-0&readPreference=primary&appname=MongoDB%20Compass&ssl=true"
-    database: "AlexMessenger"
+    address: "mongodb://localhost:27017"
+    database: "Messenger"
     messages: "Messages"
     users: "Users"
     chats: "Chats"
     files: "Files"
+    chat_settings: "Chat_settings"
+    chats_array: "Chats_array"
+    personal_settings: "Personal_settings"
 web:
     port: "8384"
