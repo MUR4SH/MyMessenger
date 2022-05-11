@@ -15,16 +15,18 @@ import (
 	"github.com/MUR4SH/MyMessenger/structures"
 )
 
+const LIMIT = 20
+
 type DatabaseInterface struct {
 	clientOptions              options.ClientOptions
 	client                     mongo.Client
-	collectionMessages         *mongo.Collection
-	collectionUsers            *mongo.Collection
-	collectionChats            *mongo.Collection
-	collectionFiles            *mongo.Collection
-	collectionChatSettings     *mongo.Collection
-	collectionChatsArray       *mongo.Collection
-	collectionPersonalSettings *mongo.Collection
+	collectionMessages         mongo.Collection
+	collectionUsers            mongo.Collection
+	collectionChats            mongo.Collection
+	collectionFiles            mongo.Collection
+	collectionChatsArray       mongo.Collection
+	collectionChatSettings     mongo.Collection
+	collectionPersonalSettings mongo.Collection
 }
 
 func New(
@@ -38,22 +40,20 @@ func New(
 	coll_chats_array string,
 	coll_personal_settings string,
 ) DatabaseInterface {
-	// Set client options
 	clientOptions := options.Client().ApplyURI(address)
-
-	// Connect to MongoDB
+	//Коннект к бд
 	client, err := mongo.Connect(context.TODO(), clientOptions)
 	if err != nil {
 		panic(err)
 	}
 
-	// Check the connection
+	//Проверяем подключение
 	err = client.Ping(context.TODO(), nil)
 	if err != nil {
 		panic(err)
 	}
 	db := client.Database(database)
-	// get collection as ref
+
 	collectionMessages := db.Collection(coll_messages)
 	collectionUsers := db.Collection(coll_users)
 	collectionFiles := db.Collection(coll_files)
@@ -61,19 +61,19 @@ func New(
 	collectionChatsArray := db.Collection(coll_chats_array)
 	collectionChatSettings := db.Collection(coll_chat_settings)
 	collectionPersonalSettings := db.Collection(coll_personal_settings)
-	log.Print(" Connected to database\n")
+	log.Print("Connected to database\n")
 	log.Print(coll_chats)
 
 	return DatabaseInterface{
 		*clientOptions,
 		*client,
-		collectionMessages,
-		collectionChats,
-		collectionUsers,
-		collectionFiles,
-		collectionChatsArray,
-		collectionChatSettings,
-		collectionPersonalSettings,
+		*collectionMessages,
+		*collectionUsers,
+		*collectionChats,
+		*collectionFiles,
+		*collectionChatsArray,
+		*collectionChatSettings,
+		*collectionPersonalSettings,
 	}
 }
 
@@ -83,6 +83,10 @@ func (d DatabaseInterface) GetUsersChats(user_id string, limit int, offset int) 
 	userId, err := primitive.ObjectIDFromHex(user_id)
 	if err != nil {
 		log.Println("Invalid id")
+	}
+
+	if limit <= 0 {
+		limit = LIMIT
 	}
 
 	if offset < limit || offset < 0 {
@@ -111,7 +115,14 @@ func (d DatabaseInterface) GetUsersChats(user_id string, limit int, offset int) 
 		}}},
 	}))
 
-	result.All(context.TODO(), &res)
+	for result.Next(context.TODO()) {
+		var elem structures.Chats_array
+		err := result.Decode(&elem)
+		if err != nil {
+			log.Fatal(err)
+		}
+		res = append(res, elem)
+	}
 
 	return res, err
 }
@@ -163,9 +174,6 @@ func (d DatabaseInterface) GetMessages(chat_id string, limit int, offset int) ([
 
 func (d DatabaseInterface) Authorise(login string, password string) (string, error) {
 	var res structures.Chat
-
-	d.collectionUsers.FindOne(context.TODO(), bson.D{{}}).Decode(&res)
-	log.Println(res)
 	err := d.collectionUsers.FindOne(context.TODO(), bson.D{{"login", login}, {"password", password}}).Decode(&res)
 
 	return res.Id, err

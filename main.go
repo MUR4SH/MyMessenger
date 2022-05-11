@@ -2,7 +2,6 @@ package main
 
 import (
 	"os"
-	"sync"
 
 	"github.com/MUR4SH/MyMessenger/databaseInterface"
 	"github.com/MUR4SH/MyMessenger/serverAndHandlers"
@@ -53,8 +52,4 @@ func main() {
 	)
 
 	serverAndHandlers.InitServer(config.API.Port, &dbInterface)
-
-	var wg sync.WaitGroup
-	wg.Add(1)
-	wg.Wait()
 }
