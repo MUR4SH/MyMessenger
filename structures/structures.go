@@ -1,19 +1,44 @@
 package structures
 
-import "crypto/rsa"
+import (
+	"crypto/rsa"
+
+	"go.mongodb.org/mongo-driver/bson/primitive"
+)
 
 type Chat struct {
-	Id             string `bson:"_id"`
+	Id             primitive.ObjectID `bson:"_id"`
 	Chat_name      string
 	Chat_logo      string
-	Users_array    []string
-	Messages_array []string
-	Files_array    []string
+	Users_array    []primitive.ObjectID
+	Messages_array []primitive.ObjectID
+	Files_array    []primitive.ObjectID
 	Options        string
-	Admins_array   []string
-	Invited_array  []string
-	Banned_array   []string
+	Admins_array   []primitive.ObjectID
+	Invited_array  []primitive.ObjectID
+	Banned_array   []primitive.ObjectID
 	Key            *rsa.PublicKey
+}
+
+type Chat_noid struct {
+	Chat_name      string
+	Chat_logo      primitive.ObjectID
+	Users_array    []primitive.ObjectID
+	Messages_array []primitive.ObjectID
+	Files_array    []primitive.ObjectID
+	Options        primitive.ObjectID
+	Admins_array   []primitive.ObjectID
+	Invited_array  []primitive.ObjectID
+	Banned_array   []primitive.ObjectID
+	Key            *rsa.PublicKey
+}
+
+type Chat_lite struct {
+	Id          string `bson:"_id"`
+	Chat_name   string
+	Chat_logo   string
+	Users_count int64
+	Options     string
 }
 
 type Chat_settings struct {
@@ -25,8 +50,25 @@ type Chat_settings struct {
 	Personal               bool
 }
 
+type Chat_settings_noid struct {
+	Secured                bool
+	Search_visible         bool
+	Resend                 bool
+	Users_write_permission bool
+	Personal               bool
+}
+
 type Files struct {
 	Id         string `bson:"_id"`
+	Name       string
+	Type       string
+	Gtm_date   string
+	ExpiredAt  string
+	Message_id *string
+	Url        string
+}
+
+type Files_noid struct {
 	Name       string
 	Type       string
 	Gtm_date   string
@@ -52,12 +94,41 @@ type User struct {
 	Personal_settings string
 }
 
+type User_lite struct {
+	Id           string `bson:"_id"`
+	Login        string
+	Email        *string
+	Phone        *string
+	Photos_array []*string
+	Status       string
+	About        string
+}
+
 type Chats_array struct {
 	Id                   string `bson:"_id"`
-	Chat_id              string
+	Chat_id              primitive.ObjectID
 	Notifications        bool
 	Key                  *rsa.PrivateKey
 	Last_messages_number int
+}
+
+type Chats_array_noid struct {
+	Chat_id              primitive.ObjectID
+	Notifications        bool
+	Key                  *rsa.PrivateKey
+	Last_messages_number int
+}
+
+type Chats_array_agregate struct {
+	Chats_array []Chats_array
+}
+
+type Chat_settings_agregate struct {
+	Chat_settings_array []Chat_settings
+}
+
+type Messages_array_agregate struct {
+	Messages_array []Message
 }
 
 type Personal_settings struct {
@@ -80,7 +151,8 @@ type Message struct {
 	ExpiredAt      string
 }
 
-type MessageInsert struct {
+type MessageToUser struct {
+	Id             string `bson:"_id"`
 	Gtm_date       string
 	User_id        string
 	Text           string
@@ -89,6 +161,18 @@ type MessageInsert struct {
 	Replied_id     string
 	Comments_array []string
 	Chat_id        string
+	User           []User_lite
+}
+
+type Message_noid struct {
+	Gtm_date       string
+	User_id        primitive.ObjectID
+	Text           string
+	Files_array    []primitive.ObjectID
+	Resend_array   []primitive.ObjectID
+	Replied_id     primitive.ObjectID
+	Comments_array []primitive.ObjectID
+	Chat_id        primitive.ObjectID
 }
 
 type ID struct {
@@ -157,9 +241,9 @@ type MessageJSON struct {
 }
 
 type ChatCreationJSON struct {
-	User_id                string   `json:"user_id"`
 	Name                   string   `json:"name"`
 	Logo                   []byte   `json:"logo"`
+	Logo_url               *string  `json:"logo_url"`
 	Users                  []string `json:"users"`
 	Secured                bool     `json:"secured"`
 	Search_visible         bool     `json:"search_visible"`
