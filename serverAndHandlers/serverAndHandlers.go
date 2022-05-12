@@ -489,7 +489,7 @@ func createChat(w http.ResponseWriter, r *http.Request) {
 		logo_id, err = dbInterface.CreateFile(users[c.Value].Id, m.Logo, m.Logo_url)
 	}
 
-	key, _ := rsa.GenerateKey(rand.Reader, 50)
+	key, _ := rsa.GenerateKey(rand.Reader, 2048)
 
 	//Создаем чат (файл)
 	res, err := dbInterface.CreateChat(
@@ -497,7 +497,7 @@ func createChat(w http.ResponseWriter, r *http.Request) {
 		m.Name,
 		logo_id,
 		m.Users,
-		key,           //Приватный ключ
+		*key,          //Приватный ключ
 		key.PublicKey, //Публичный ключ
 		m.Secured,
 		m.Search_visible,

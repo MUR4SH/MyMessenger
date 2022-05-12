@@ -1,10 +1,33 @@
 package structures
 
 import (
-	"crypto/rsa"
-
 	"go.mongodb.org/mongo-driver/bson/primitive"
 )
+
+type EditedPublicKey struct {
+	N string
+	E int
+}
+
+type EditedPrivateKey struct {
+	PublicKey EditedPublicKey
+	D         string
+	Primes    []string
+
+	Precomputed EditedPrecomputedValues
+}
+
+type EditedPrecomputedValues struct {
+	Dp, Dq    string
+	Qinv      string
+	CRTValues []EditedCRTValue
+}
+
+type EditedCRTValue struct {
+	Exp   string
+	Coeff string
+	R     string
+}
 
 type Chat struct {
 	Id             primitive.ObjectID `bson:"_id"`
@@ -17,7 +40,7 @@ type Chat struct {
 	Admins_array   []primitive.ObjectID
 	Invited_array  []primitive.ObjectID
 	Banned_array   []primitive.ObjectID
-	Key            *rsa.PublicKey
+	Key            EditedPublicKey
 }
 
 type Chat_noid struct {
@@ -30,7 +53,7 @@ type Chat_noid struct {
 	Admins_array   []primitive.ObjectID
 	Invited_array  []primitive.ObjectID
 	Banned_array   []primitive.ObjectID
-	Key            *rsa.PublicKey
+	Key            EditedPublicKey
 }
 
 type Chat_lite struct {
@@ -94,6 +117,11 @@ type User struct {
 	Personal_settings string
 }
 
+type Chat_User_aggregate_lite struct {
+	Id          string `bson:"_id"`
+	Users_array []User_lite
+}
+
 type User_lite struct {
 	Id           string `bson:"_id"`
 	Login        string
@@ -108,23 +136,23 @@ type Chats_array struct {
 	Id                   string `bson:"_id"`
 	Chat_id              primitive.ObjectID
 	Notifications        bool
-	Key                  *rsa.PrivateKey
+	Key                  EditedPrivateKey
 	Last_messages_number int
 }
 
 type Chats_array_noid struct {
 	Chat_id              primitive.ObjectID
 	Notifications        bool
-	Key                  *rsa.PrivateKey
+	Key                  EditedPrivateKey
 	Last_messages_number int
 }
 
 type Chats_array_agregate struct {
-	Chats_array []Chats_array
+	Chats_arrays []Chats_array
 }
 
 type Chat_settings_agregate struct {
-	Chat_settings_array []Chat_settings
+	Options []Chat_settings
 }
 
 type Messages_array_agregate struct {
@@ -155,7 +183,7 @@ type MessageToUser struct {
 	Id             string `bson:"_id"`
 	Gtm_date       string
 	User_id        string
-	Text           string
+	Text           []byte
 	Files_array    []string
 	Resend_array   []string
 	Replied_id     string
@@ -167,7 +195,7 @@ type MessageToUser struct {
 type Message_noid struct {
 	Gtm_date       string
 	User_id        primitive.ObjectID
-	Text           string
+	Text           []byte
 	Files_array    []primitive.ObjectID
 	Resend_array   []primitive.ObjectID
 	Replied_id     primitive.ObjectID
@@ -184,17 +212,17 @@ type TokenJson struct {
 }
 
 type ChatJSON struct {
-	Id             string        `json:"id"`
-	Chat_name      string        `json:"chat_name"`
-	Chat_logo      string        `json:"chat_logo"`
-	Users_array    []string      `json:"users_array"`
-	Messages_array []string      `json:"messages_array"`
-	Files_array    []string      `json:"files_array"`
-	Options        string        `json:"options"`
-	Admins_array   []string      `json:"admins_array"`
-	Invited_array  []string      `json:"invited_array"`
-	Banned_array   []string      `json:"banned_array"`
-	Key            rsa.PublicKey `json:"key"`
+	Id             string          `json:"id"`
+	Chat_name      string          `json:"chat_name"`
+	Chat_logo      string          `json:"chat_logo"`
+	Users_array    []string        `json:"users_array"`
+	Messages_array []string        `json:"messages_array"`
+	Files_array    []string        `json:"files_array"`
+	Options        string          `json:"options"`
+	Admins_array   []string        `json:"admins_array"`
+	Invited_array  []string        `json:"invited_array"`
+	Banned_array   []string        `json:"banned_array"`
+	Key            EditedPublicKey `json:"key"`
 }
 
 type FilesJSON struct {

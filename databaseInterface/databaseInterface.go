@@ -2,10 +2,8 @@ package databaseInterface
 
 import (
 	"context"
-	"crypto/rand"
 	"crypto/rsa"
 	"log"
-	"strconv"
 	"time"
 
 	"go.mongodb.org/mongo-driver/bson"
@@ -13,6 +11,7 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 
+	security "github.com/MUR4SH/MyMessenger/security"
 	"github.com/MUR4SH/MyMessenger/structures"
 )
 
@@ -29,12 +28,6 @@ type DatabaseInterface struct {
 	collectionChatsArray   mongo.Collection
 	collectionChatSettings mongo.Collection
 	collectionUserSettings mongo.Collection
-}
-
-func Encrypt(s string, key *rsa.PublicKey) string {
-	crypt, _ := rsa.EncryptPKCS1v15(rand.Reader, key, []byte(s))
-
-	return string(crypt)
 }
 
 func New(
@@ -101,18 +94,23 @@ func (d DatabaseInterface) GetUsersChat(user_id string, chat_id string) (structu
 			{Key: "from", Value: "Chats_array"},
 			{Key: "localField", Value: "chats_array"},
 			{Key: "foreignField", Value: "_id"},
-			{Key: "as", Value: "chats_array"},
+			{Key: "as", Value: "chats_arrays"},
 			{Key: "pipeline", Value: []bson.D{
 				{{
-					Key: "$match", Value: bson.D{{Key: "_id", Value: chatId}},
+					Key: "$match", Value: bson.D{{Key: "chat_id", Value: chatId}},
 				}},
 			}},
 		}}},
 		bson.D{{Key: "$project", Value: bson.D{
-			{Key: "chats_array", Value: 1},
+			{Key: "chats_arrays", Value: 1},
 			{Key: "_id", Value: 0},
 		}}},
 	}))
+
+	if err != nil {
+		log.Println("err")
+		log.Println(err)
+	}
 
 	for result.Next(context.TODO()) {
 		var elem structures.Chats_array_agregate
@@ -123,7 +121,7 @@ func (d DatabaseInterface) GetUsersChat(user_id string, chat_id string) (structu
 		res = append(res, elem)
 	}
 
-	return res[0].Chats_array[0], err
+	return res[0].Chats_arrays[0], err
 }
 
 //Получаем список чатов пользователя
@@ -148,7 +146,7 @@ func (d DatabaseInterface) GetUsersChats(user_id string, limit int, offset int) 
 			{Key: "from", Value: "Chats_array"},
 			{Key: "localField", Value: "chats_array"},
 			{Key: "foreignField", Value: "_id"},
-			{Key: "as", Value: "chats_array"},
+			{Key: "as", Value: "chats_arrays"},
 			{Key: "pipeline", Value: []bson.D{
 				{{
 					Key: "$skip", Value: offset,
@@ -159,7 +157,7 @@ func (d DatabaseInterface) GetUsersChats(user_id string, limit int, offset int) 
 			}},
 		}}},
 		bson.D{{Key: "$project", Value: bson.D{
-			{Key: "chats_array", Value: 1},
+			{Key: "chats_arrays", Value: 1},
 			{Key: "_id", Value: 0},
 		}}},
 	}))
@@ -194,7 +192,9 @@ func (d DatabaseInterface) GetUsersKey(user_id string, chat_id string) (*rsa.Pri
 		return nil, err
 	}
 
-	return chats.Key, err
+	key := security.PrivateKeyDecode(&chats.Key)
+
+	return &key, err
 }
 
 //Получить пользователей чата
@@ -221,7 +221,7 @@ func (d DatabaseInterface) GetUsersOfChat(user_id string, chat_id string, limit 
 		bson.D{{Key: "$match", Value: bson.D{{Key: "_id", Value: objectId}}}},
 		bson.D{{Key: "$project", Value: bson.D{
 			{Key: "users_array", Value: bson.D{
-				{Key: "$slice", Value: []string{"$users_array", strconv.Itoa(offset), strconv.Itoa(limit)}},
+				{Key: "$slice", Value: []interface{}{"$users_array", offset, limit}},
 			}},
 		}}},
 		bson.D{{Key: "$lookup", Value: bson.D{
@@ -243,13 +243,18 @@ func (d DatabaseInterface) GetUsersOfChat(user_id string, chat_id string, limit 
 		}}},
 	}))
 
+	if err != nil {
+		log.Println("err")
+		log.Println(err)
+	}
+
 	for cur.Next(context.TODO()) {
-		var elem structures.User_lite
+		var elem structures.Chat_User_aggregate_lite
 		err := cur.Decode(&elem)
 		if err != nil {
 			log.Fatal(err)
 		}
-		res = append(res, elem)
+		res = elem.Users_array
 	}
 
 	return res, err
@@ -274,6 +279,12 @@ func (d DatabaseInterface) GetChat(chat_id string) (structures.Chat_lite, error)
 			{Key: "options", Value: 1},
 		}}},
 	}))
+
+	if err != nil {
+		log.Println("here")
+		log.Println(err)
+	}
+
 	for cur.Next(context.TODO()) {
 		var elem structures.Chat_lite
 		err := cur.Decode(&elem)
@@ -307,17 +318,22 @@ func (d DatabaseInterface) getChatsOptions(chat_id string) (structures.Chat_sett
 			{Key: "_id", Value: 0},
 		}}},
 	}))
+
+	if err != nil {
+		log.Println("error")
+		log.Println(err)
+	}
+
 	for cur.Next(context.TODO()) {
 		var elem structures.Chat_settings_agregate
 		err := cur.Decode(&elem)
 		if err != nil {
 			log.Fatal(err)
 		}
-		log.Println(elem)
 		res = append(res, elem)
 	}
 
-	return res[0].Chat_settings_array[0], err
+	return res[0].Options[0], err
 }
 
 //Получаем параметр защищенности чата
@@ -338,7 +354,7 @@ func (d DatabaseInterface) UserInChat(user_id string, chat_id string) bool {
 			{Key: "from", Value: "Chats_array"},
 			{Key: "localField", Value: "chats_array"},
 			{Key: "foreignField", Value: "_id"},
-			{Key: "as", Value: "chats_array"},
+			{Key: "as", Value: "chats_arrays"},
 			{Key: "pipeline", Value: []bson.D{
 				{{
 					Key: "$match", Value: bson.D{
@@ -348,7 +364,7 @@ func (d DatabaseInterface) UserInChat(user_id string, chat_id string) bool {
 			}},
 		}}},
 		bson.D{{Key: "$project", Value: bson.D{
-			{Key: "chats_array", Value: 1},
+			{Key: "chats_arrays", Value: 1},
 			{Key: "_id", Value: 0},
 		}}},
 	}))
@@ -360,10 +376,11 @@ func (d DatabaseInterface) UserInChat(user_id string, chat_id string) bool {
 	for cur.Next(context.TODO()) {
 		var elem structures.Chats_array_agregate
 		err := cur.Decode(&elem)
+		log.Println(elem)
 		if err != nil {
 			log.Println(err)
 		} else {
-			res = (len(elem.Chats_array) == 1)
+			res = (len(elem.Chats_arrays) == 1)
 		}
 	}
 
@@ -383,6 +400,7 @@ func (d DatabaseInterface) GetMessages(user_id string, chat_id string, limit int
 	//Если пользователь не состоит в чате
 	if !d.UserInChat(user_id, chat_id) {
 		var er error
+		log.Println("User not in chat")
 		return nil, er
 	}
 
@@ -443,14 +461,23 @@ func (d DatabaseInterface) Authorise(login string, password string) (string, err
 func (d DatabaseInterface) SendMessage(chat_id string, user_id string, text string) (bool, error) {
 	time := time.Now().UTC()
 	var msg structures.Message_noid
+	var byte_text []byte
 	objectId, err := primitive.ObjectIDFromHex(chat_id)
 	msg.Chat_id = objectId
 	msg.Gtm_date = time.Format("2006-01-02 15:04:05")
 	if d.ChatIsSecured(chat_id) {
-		key, _ := d.GetUsersKey(user_id, chat_id)
-		text = Encrypt(text, &key.PublicKey)
+		key, e := d.GetUsersKey(user_id, chat_id)
+		if e != nil {
+			log.Println(e)
+		}
+
+		byte_text = security.Encrypt(text, &key.PublicKey)
+		log.Println(text)
+	} else {
+		byte_text = []byte(text)
 	}
-	msg.Text = text
+
+	msg.Text = byte_text
 	userId, err := primitive.ObjectIDFromHex(user_id)
 	msg.User_id = userId
 
@@ -529,7 +556,7 @@ func (d DatabaseInterface) insertUsersChatsArray(
 	var f structures.Chats_array_noid
 	objectId, _ := primitive.ObjectIDFromHex(chat_id)
 	f.Chat_id = objectId
-	f.Key = privateKey
+	f.Key = security.PrivateKeyTransform(privateKey)
 
 	res, err := d.collectionChatsArray.InsertOne(context.TODO(), f)
 	if err != nil {
@@ -552,7 +579,7 @@ func (d DatabaseInterface) CreateChat(
 	name string,
 	logo string,
 	users []string,
-	privateKey *rsa.PrivateKey,
+	privateKey rsa.PrivateKey,
 	publicKey rsa.PublicKey,
 	secured bool,
 	search_visible bool,
@@ -560,18 +587,19 @@ func (d DatabaseInterface) CreateChat(
 	users_write_permission bool,
 	personal bool,
 ) (string, error) {
-	var null_arr []primitive.ObjectID
+	log.Println(publicKey.N)
+
 	var f structures.Chat_noid
 	f.Chat_name = name
 	logoId, _ := primitive.ObjectIDFromHex(logo)
 	f.Chat_logo = logoId
-	//Если зашифрованный или персональный чат, то шифруем
-	if secured || personal {
-		f.Key = &publicKey
-	}
 	userId, _ := primitive.ObjectIDFromHex(user_id)
 	var ar []primitive.ObjectID
 	f.Admins_array = append(ar, userId)
+	//Если зашифрованный или персональный чат, то шифруем
+	if secured || personal {
+		f.Key = security.PublicKeyTransform(&publicKey)
+	}
 
 	var arr []primitive.ObjectID
 	arr = append(arr, userId)
@@ -579,12 +607,15 @@ func (d DatabaseInterface) CreateChat(
 		userId, _ = primitive.ObjectIDFromHex(users[i])
 		arr = append(arr, userId)
 	}
+	if personal {
+		f.Admins_array = arr
+	}
 	f.Users_array = arr
 
-	f.Messages_array = null_arr
-	f.Files_array = null_arr
-	f.Invited_array = null_arr
-	f.Banned_array = null_arr
+	f.Messages_array = []primitive.ObjectID{}
+	f.Files_array = []primitive.ObjectID{}
+	f.Invited_array = []primitive.ObjectID{}
+	f.Banned_array = []primitive.ObjectID{}
 
 	res, err := d.collectionChats.InsertOne(context.TODO(), f)
 
@@ -607,7 +638,7 @@ func (d DatabaseInterface) CreateChat(
 		_, err = d.insertUsersChatsArray(
 			f.Users_array[i].Hex(),
 			oid.Hex(),
-			privateKey,
+			&privateKey,
 		)
 	}
 
