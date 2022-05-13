@@ -163,6 +163,10 @@ type Messages_array_agregate struct {
 	Messages_array []Message
 }
 
+type Answer struct {
+	Text string `json:"text"`
+}
+
 type Personal_settings struct {
 	Id            primitive.ObjectID `bson:"_id"`
 	User_id       string
