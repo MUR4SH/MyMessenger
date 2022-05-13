@@ -32,11 +32,11 @@ type EditedCRTValue struct {
 type Chat struct {
 	Id             primitive.ObjectID `bson:"_id"`
 	Chat_name      string
-	Chat_logo      string
+	Chat_logo      primitive.ObjectID
 	Users_array    []primitive.ObjectID
 	Messages_array []primitive.ObjectID
 	Files_array    []primitive.ObjectID
-	Options        string
+	Options        primitive.ObjectID
 	Admins_array   []primitive.ObjectID
 	Invited_array  []primitive.ObjectID
 	Banned_array   []primitive.ObjectID
@@ -57,7 +57,7 @@ type Chat_noid struct {
 }
 
 type Chat_lite struct {
-	Id          string `bson:"_id"`
+	Id          primitive.ObjectID `bson:"_id"`
 	Chat_name   string
 	Chat_logo   string
 	Users_count int64
@@ -65,7 +65,8 @@ type Chat_lite struct {
 }
 
 type Chat_settings struct {
-	Id                     string `bson:"_id"`
+	Id                     primitive.ObjectID `bson:"_id"`
+	Chat_id                primitive.ObjectID
 	Secured                bool
 	Search_visible         bool
 	Resend                 bool
@@ -74,6 +75,7 @@ type Chat_settings struct {
 }
 
 type Chat_settings_noid struct {
+	Chat_id                primitive.ObjectID
 	Secured                bool
 	Search_visible         bool
 	Resend                 bool
@@ -82,7 +84,7 @@ type Chat_settings_noid struct {
 }
 
 type Files struct {
-	Id         string `bson:"_id"`
+	Id         primitive.ObjectID `bson:"_id"`
 	Name       string
 	Type       string
 	Gtm_date   string
@@ -101,11 +103,11 @@ type Files_noid struct {
 }
 
 type UserId struct {
-	Id string `bson:"_id"`
+	Id primitive.ObjectID `bson:"_id"`
 }
 
 type User struct {
-	Id                string `bson:"_id"`
+	Id                primitive.ObjectID `bson:"_id"`
 	Login             string
 	Password          *string
 	Email             *string
@@ -118,12 +120,12 @@ type User struct {
 }
 
 type Chat_User_aggregate_lite struct {
-	Id          string `bson:"_id"`
+	Id          primitive.ObjectID `bson:"_id"`
 	Users_array []User_lite
 }
 
 type User_lite struct {
-	Id           string `bson:"_id"`
+	Id           primitive.ObjectID `bson:"_id"`
 	Login        string
 	Email        *string
 	Phone        *string
@@ -133,17 +135,19 @@ type User_lite struct {
 }
 
 type Chats_array struct {
-	Id                   string `bson:"_id"`
+	Id                   primitive.ObjectID `bson:"_id"`
 	Chat_id              primitive.ObjectID
 	Notifications        bool
 	Key                  EditedPrivateKey
+	Personal             bool
 	Last_messages_number int
 }
 
 type Chats_array_noid struct {
 	Chat_id              primitive.ObjectID
 	Notifications        bool
-	Key                  EditedPrivateKey
+	Personal             bool
+	Key                  *EditedPrivateKey
 	Last_messages_number int
 }
 
@@ -160,27 +164,27 @@ type Messages_array_agregate struct {
 }
 
 type Personal_settings struct {
-	Id            string `bson:"_id"`
+	Id            primitive.ObjectID `bson:"_id"`
 	User_id       string
 	Phone_visible bool
 	Email_visible bool
 }
 
 type Message struct {
-	Id             string `bson:"_id"`
+	Id             primitive.ObjectID `bson:"_id"`
 	Gtm_date       string
-	User_id        string
-	Text           string
-	Files_array    []string
-	Resend_array   []string
-	Replied_id     string
-	Comments_array []string
-	Chat_id        string
+	User_id        primitive.ObjectID
+	Text           []byte
+	Files_array    []primitive.ObjectID
+	Resend_array   []primitive.ObjectID
+	Replied_id     primitive.ObjectID
+	Comments_array []primitive.ObjectID
+	Chat_id        primitive.ObjectID
 	ExpiredAt      string
 }
 
 type MessageToUser struct {
-	Id             string `bson:"_id"`
+	Id             primitive.ObjectID `bson:"_id"`
 	Gtm_date       string
 	User_id        string
 	Text           []byte
@@ -204,7 +208,7 @@ type Message_noid struct {
 }
 
 type ID struct {
-	Id string `bson:"_id"`
+	Id primitive.ObjectID `bson:"_id"`
 }
 
 type TokenJson struct {
@@ -266,6 +270,10 @@ type MessageJSON struct {
 	Comments_array []string `json:"comments_array"`
 	Chat_id        string   `json:"chat_id"`
 	ExpiredAt      string   `json:"expired_at"`
+}
+
+type ChatIdJSON struct {
+	Id string `json:"chat_id`
 }
 
 type ChatCreationJSON struct {

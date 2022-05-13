@@ -3,6 +3,7 @@ package databaseInterface
 import (
 	"context"
 	"crypto/rsa"
+	"errors"
 	"log"
 	"time"
 
@@ -16,6 +17,8 @@ import (
 )
 
 const LIMIT = 20
+const SECURED_MESSAGE_LIMIT = 245
+const DATE_FORMAT = "2006-01-02 15:04:05"
 
 type DatabaseInterface struct {
 	clientOptions          options.ClientOptions
@@ -30,6 +33,7 @@ type DatabaseInterface struct {
 	collectionUserSettings mongo.Collection
 }
 
+//Функция инициальзации подключения к бд и создания интерфейса взаимодействия
 func New(
 	address string,
 	database string,
@@ -154,6 +158,9 @@ func (d DatabaseInterface) GetUsersChats(user_id string, limit int, offset int) 
 				{{
 					Key: "$limit", Value: limit,
 				}},
+				{{Key: "$project", Value: bson.D{
+					{Key: "key", Value: 0},
+				}}},
 			}},
 		}}},
 		bson.D{{Key: "$project", Value: bson.D{
@@ -184,7 +191,7 @@ func (d DatabaseInterface) GetUser(login string, limit int, offset int) ([]struc
 }
 
 //Получить ключ пользователя
-func (d DatabaseInterface) GetUsersKey(user_id string, chat_id string) (*rsa.PrivateKey, error) {
+func (d DatabaseInterface) GetUsersKey(user_id string, chat_id string) (*structures.EditedPrivateKey, error) {
 	chats, err := d.GetUsersChat(user_id, chat_id)
 
 	if err != nil {
@@ -192,9 +199,7 @@ func (d DatabaseInterface) GetUsersKey(user_id string, chat_id string) (*rsa.Pri
 		return nil, err
 	}
 
-	key := security.PrivateKeyDecode(&chats.Key)
-
-	return &key, err
+	return &chats.Key, err
 }
 
 //Получить пользователей чата
@@ -451,6 +456,21 @@ func (d DatabaseInterface) GetMessages(user_id string, chat_id string, limit int
 	return res, err
 }
 
+//Метод получения расшифрованных сообщений
+func (d DatabaseInterface) GetDecryptedMessages(user_id string, chat_id string, limit int, offset int) ([]structures.MessageToUser, error) {
+	key, _ := d.GetUsersKey(user_id, chat_id)
+	decrypted_key := security.PrivateKeyDecode(key)
+
+	messages, err := d.GetMessages(user_id, chat_id, limit, offset)
+
+	for i := 0; i < len(messages); i++ {
+		messages[i].Text = security.Decrypt(messages[i].Text, decrypted_key)
+	}
+
+	return messages, err
+}
+
+//Метод авторизации, проверяет пользователя по логину и паролю, возвращая id
 func (d DatabaseInterface) Authorise(login string, password string) (string, error) {
 	var res structures.Chat
 	err := d.collectionUsers.FindOne(context.TODO(), bson.D{{Key: "login", Value: login}, {Key: "password", Value: password}}).Decode(&res)
@@ -458,31 +478,26 @@ func (d DatabaseInterface) Authorise(login string, password string) (string, err
 	return res.Id.Hex(), err
 }
 
-func (d DatabaseInterface) SendMessage(chat_id string, user_id string, text string) (bool, error) {
-	time := time.Now().UTC()
+//Метод отправки уже зашифрованных сообщений
+func (d DatabaseInterface) SendEncryptedMessage(chat_id string, user_id string, text []byte) (bool, error) {
 	var msg structures.Message_noid
-	var byte_text []byte
-	objectId, err := primitive.ObjectIDFromHex(chat_id)
-	msg.Chat_id = objectId
-	msg.Gtm_date = time.Format("2006-01-02 15:04:05")
-	if d.ChatIsSecured(chat_id) {
-		key, e := d.GetUsersKey(user_id, chat_id)
-		if e != nil {
-			log.Println(e)
-		}
 
-		byte_text = security.Encrypt(text, &key.PublicKey)
-		log.Println(text)
-	} else {
-		byte_text = []byte(text)
+	time := time.Now().UTC()
+	objectId, _ := primitive.ObjectIDFromHex(chat_id)
+	msg.Chat_id = objectId
+	msg.Gtm_date = time.Format(DATE_FORMAT)
+
+	if !d.ChatIsSecured(chat_id) {
+		return false, errors.New("chat is not secured")
 	}
 
-	msg.Text = byte_text
-	userId, err := primitive.ObjectIDFromHex(user_id)
+	msg.Text = text
+	userId, _ := primitive.ObjectIDFromHex(user_id)
 	msg.User_id = userId
 
 	ins, err := d.collectionMessages.InsertOne(context.TODO(), msg)
 	if err != nil {
+		log.Println(err)
 		return false, err
 	}
 	oid := ins.InsertedID
@@ -492,9 +507,53 @@ func (d DatabaseInterface) SendMessage(chat_id string, user_id string, text stri
 		}},
 	}
 
-	if err != nil {
-		log.Println("Invalid id")
+	_, err = d.collectionChats.UpdateOne(context.TODO(), bson.D{{Key: "_id", Value: objectId}}, update)
+	return err == nil, err
+}
+
+//Метод отправки сообщений
+func (d DatabaseInterface) SendMessage(chat_id string, user_id string, text string) (bool, error) {
+	time := time.Now().UTC()
+	var msg structures.Message_noid
+	var byte_text []byte
+	objectId, _ := primitive.ObjectIDFromHex(chat_id)
+	msg.Chat_id = objectId
+	msg.Gtm_date = time.Format(DATE_FORMAT)
+	if d.ChatIsSecured(chat_id) {
+
+		if len(text) > SECURED_MESSAGE_LIMIT {
+			return false, errors.New("message length more than limit")
+		}
+
+		key, e := d.GetUsersKey(user_id, chat_id)
+		if e != nil {
+			log.Println(e)
+			return false, e
+		}
+
+		decodedKey := security.PrivateKeyDecode(key)
+
+		byte_text = security.Encrypt(text, &decodedKey.PublicKey)
+	} else {
+		byte_text = []byte(text)
 	}
+
+	msg.Text = byte_text
+	userId, _ := primitive.ObjectIDFromHex(user_id)
+	msg.User_id = userId
+
+	ins, err := d.collectionMessages.InsertOne(context.TODO(), msg)
+	if err != nil {
+		log.Println(err)
+		return false, err
+	}
+	oid := ins.InsertedID
+	update := bson.D{
+		primitive.E{Key: "$push", Value: bson.D{
+			primitive.E{Key: "messages_array", Value: oid},
+		}},
+	}
+
 	_, err = d.collectionChats.UpdateOne(context.TODO(), bson.D{{Key: "_id", Value: objectId}}, update)
 	return err == nil, err
 }
@@ -509,6 +568,8 @@ func (d DatabaseInterface) insertChatSettings(
 	personal bool,
 ) (*mongo.InsertOneResult, error) {
 	var f structures.Chat_settings_noid
+	chatId, _ := primitive.ObjectIDFromHex(chat_id)
+	f.Chat_id = chatId
 	f.Secured = secured || personal                               //Если чат персональный, то автоматически защищенный
 	f.Search_visible = search_visible && !personal                //Персональные не видны в поиске
 	f.Resend = resend && !f.Secured                               //Если чат защищен, то запрещаем пересылку
@@ -539,8 +600,7 @@ func (d DatabaseInterface) pushUsersChats(
 
 	objectId, err := primitive.ObjectIDFromHex(user_id)
 	if err != nil {
-		log.Println("Invalid users id")
-		return false, err
+		return false, errors.New("invalid user's id")
 	}
 	_, err = d.collectionUsers.UpdateOne(context.TODO(), bson.D{{Key: "_id", Value: objectId}}, update)
 
@@ -552,25 +612,75 @@ func (d DatabaseInterface) insertUsersChatsArray(
 	user_id string,
 	chat_id string,
 	privateKey *rsa.PrivateKey,
+	personal bool,
 ) (string, error) {
 	var f structures.Chats_array_noid
 	objectId, _ := primitive.ObjectIDFromHex(chat_id)
 	f.Chat_id = objectId
 	f.Key = security.PrivateKeyTransform(privateKey)
+	f.Personal = personal
 
 	res, err := d.collectionChatsArray.InsertOne(context.TODO(), f)
 	if err != nil {
 		log.Println(err)
-		return "Error inserting new chat element", err
+		return "", err
 	}
 	oid, _ := res.InsertedID.(primitive.ObjectID)
 	res2, err2 := d.pushUsersChats(user_id, oid.Hex())
 	if !res2 {
 		log.Println(err2)
-		return "Error pushing chat to user", err2
+		return "", err2
 	}
 
 	return oid.Hex(), err
+}
+
+//Метод вычисляет есть ли персональный чат у двух пользователей
+func (d DatabaseInterface) hasPersonalChat(first_id string, second_id string) (bool, string) {
+	var res []structures.ID
+	firstId, _ := primitive.ObjectIDFromHex(first_id)
+	secondId, _ := primitive.ObjectIDFromHex(second_id)
+
+	cur, err := (d.collectionChats.Aggregate(context.TODO(), mongo.Pipeline{
+		bson.D{{Key: "$match", Value: bson.D{{Key: "users_array", Value: firstId}}}},
+		bson.D{{Key: "$match", Value: bson.D{{Key: "users_array", Value: secondId}}}},
+		bson.D{{Key: "$lookup", Value: bson.D{
+			{Key: "from", Value: "Chat_settings"},
+			{Key: "localField", Value: "options"},
+			{Key: "foreignField", Value: "_id"},
+			{Key: "as", Value: "options"},
+			{Key: "pipeline", Value: []bson.D{{{
+				Key: "$match", Value: bson.D{
+					{Key: "personal", Value: true},
+				}}},
+			}},
+		}}},
+		bson.D{{Key: "$match", Value: bson.D{{Key: "options.0", Value: bson.D{{
+			Key: "$exists", Value: true,
+		}}}}}},
+		bson.D{{Key: "$project", Value: bson.D{{Key: "_id", Value: 1}}}},
+	}))
+
+	if err != nil {
+		return false, ""
+	}
+
+	for cur.Next(context.TODO()) {
+		var elem structures.ID
+		err := cur.Decode(&elem)
+		if err != nil {
+			log.Fatal(err)
+		}
+		log.Println(elem)
+		res = append(res, elem)
+	}
+
+	id := ""
+	if len(res) > 0 {
+		id = res[0].Id.Hex()
+	}
+
+	return len(res) > 0, id
 }
 
 //Метод создания чата
@@ -587,7 +697,15 @@ func (d DatabaseInterface) CreateChat(
 	users_write_permission bool,
 	personal bool,
 ) (string, error) {
-	log.Println(publicKey.N)
+	if personal {
+		if len(users) != 1 {
+			return "", errors.New("wrong users length. Must be 1")
+		}
+		ok, id := d.hasPersonalChat(user_id, users[0])
+		if ok {
+			return id, nil
+		}
+	}
 
 	var f structures.Chat_noid
 	f.Chat_name = name
@@ -639,6 +757,7 @@ func (d DatabaseInterface) CreateChat(
 			f.Users_array[i].Hex(),
 			oid.Hex(),
 			&privateKey,
+			personal,
 		)
 	}
 
@@ -660,8 +779,8 @@ func (d DatabaseInterface) CreateFile(user_id string, file []byte, url *string) 
 	tm := time.Now().UTC()
 	f.Name = "name"
 	f.Type = "type"
-	f.Gtm_date = tm.Format("2006-01-02 15:04:05")
-	f.ExpiredAt = tm.AddDate(0, 6, 0).Format("2006-01-02 15:04:05")
+	f.Gtm_date = tm.Format(DATE_FORMAT)
+	f.ExpiredAt = tm.AddDate(0, 6, 0).Format(DATE_FORMAT)
 	f.Message_id = nil
 	if url != nil {
 		f.Url = *url
@@ -670,6 +789,9 @@ func (d DatabaseInterface) CreateFile(user_id string, file []byte, url *string) 
 	}
 
 	res, err := d.collectionFiles.InsertOne(context.TODO(), f)
+	if err != nil {
+		log.Println(err)
+	}
 	oid, _ := res.InsertedID.(primitive.ObjectID)
 	return oid.Hex(), err
 }

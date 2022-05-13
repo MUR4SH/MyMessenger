@@ -224,8 +224,8 @@ func getChat(w http.ResponseWriter, r *http.Request) {
 
 	enableCors(&w)
 	if !r.URL.Query().Has("chat_id") {
-		w.WriteHeader(NOT_FOUND)
-		fmt.Fprintf(w, "NOT_FOUND")
+		w.WriteHeader(NOT_DONE)
+		fmt.Fprintf(w, "NO CHAT_ID")
 		return
 	}
 
@@ -411,6 +411,7 @@ func verifyTokenFunc(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+//Функция отправки сообщений
 func sendMessage(w http.ResponseWriter, r *http.Request) {
 	log.Print(" Sending message\n")
 
@@ -520,20 +521,9 @@ func getChatKey(w http.ResponseWriter, r *http.Request) {
 
 	enableCors(&w)
 
-	var m structures.ChatJSON
-	b, err := ioutil.ReadAll(r.Body)
-	defer r.Body.Close()
-	if err != nil {
+	if !r.URL.Query().Has("chat_id") {
 		w.WriteHeader(NOT_DONE)
-		http.Error(w, err.Error(), NOT_DONE)
-		return
-	}
-
-	//Unmarshal
-	err = json.Unmarshal(b, &m)
-	if err != nil {
-		w.WriteHeader(NOT_DONE)
-		http.Error(w, err.Error(), NOT_DONE)
+		fmt.Fprintf(w, "NO CHAT_ID")
 		return
 	}
 
@@ -545,14 +535,14 @@ func getChatKey(w http.ResponseWriter, r *http.Request) {
 
 	c, _ := r.Cookie(COOKIE_NAME)
 
-	res, err := dbInterface.GetUsersKey(users[c.Value].Id, m.Id)
+	res, err := dbInterface.GetUsersKey(users[c.Value].Id, r.URL.Query().Get("chat_id"))
 	if err != nil {
 		w.WriteHeader(OK)
 		fmt.Fprintf(w, "Error getting key")
 		return
 	}
 
-	b, _ = json.Marshal(res)
+	b, _ := json.Marshal(res)
 	w.WriteHeader(OK)
 	fmt.Fprintf(w, string(b))
 }
@@ -569,7 +559,7 @@ func InitServer(port string, db *databaseInterface.DatabaseInterface) {
 	//GET Ручки
 	http.HandleFunc("/usersChats", getUsersChats) //Получить чаты пользователя
 	http.HandleFunc("/chatUsers", getUsersOfChat) //Получить пользователей чата
-	http.HandleFunc("/сhat", getChat)             //Получить информацию чата
+	http.HandleFunc("/chat", getChat)             //Получить информацию чата
 	http.HandleFunc("/messages", getMessages)     //Получить сообщения чата
 	http.HandleFunc("/chatKey", getChatKey)       //Получить сообщения чата
 	//TODO: гет-ручка обновления токена
