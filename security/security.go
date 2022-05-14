@@ -3,15 +3,20 @@ package security
 import (
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/sha256"
+	"crypto/x509"
 	"log"
 	"math/big"
 
 	"github.com/MUR4SH/MyMessenger/structures"
 )
 
+const RSA_LABEL = "RSA_LABEL"
+
 //Шифруем сообщение
 func Encrypt(s string, key *rsa.PublicKey) []byte {
-	crypt, err := rsa.EncryptPKCS1v15(rand.Reader, key, []byte(s))
+	crypt, err := rsa.EncryptOAEP(sha256.New(), rand.Reader, key, []byte(s), []byte(RSA_LABEL))
+	//crypt, err := rsa.EncryptPKCS1v15(rand.Reader, key, []byte(s))
 
 	if err != nil {
 		log.Println("encryption error")
@@ -23,8 +28,8 @@ func Encrypt(s string, key *rsa.PublicKey) []byte {
 
 //Расшифровываем сообщение
 func Decrypt(s []byte, key *rsa.PrivateKey) []byte {
-	decrypt, err := rsa.DecryptPKCS1v15(rand.Reader, key, s)
-
+	//decrypt, err := rsa.DecryptPKCS1v15(rand.Reader, key, s)
+	decrypt, err := rsa.DecryptOAEP(sha256.New(), rand.Reader, key, s, []byte(RSA_LABEL))
 	if err != nil {
 		log.Println("decryption error")
 		log.Println(err)
@@ -66,6 +71,30 @@ func PrecomputedTransform(key *rsa.PrecomputedValues) structures.EditedPrecomput
 	res.CRTValues = arr
 
 	return res
+}
+
+func PrivateKeyPEM(key *rsa.PrivateKey) []byte {
+	b := x509.MarshalPKCS1PrivateKey(key)
+
+	return b
+}
+
+func PublicKeyPEM(key *rsa.PublicKey) []byte {
+	b := x509.MarshalPKCS1PublicKey(key)
+
+	return b
+}
+
+func PrivateKeyFromPEM(key []byte) *rsa.PrivateKey {
+	b, _ := x509.ParsePKCS1PrivateKey(key)
+
+	return b
+}
+
+func PublicKeyFromPEM(key []byte) *rsa.PublicKey {
+	b, _ := x509.ParsePKCS1PublicKey(key)
+
+	return b
 }
 
 //Кодируем приватный ключ в строчный для записи в бд

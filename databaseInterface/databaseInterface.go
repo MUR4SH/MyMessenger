@@ -191,7 +191,7 @@ func (d DatabaseInterface) GetUser(login string, limit int, offset int) ([]struc
 }
 
 //Получить ключ пользователя
-func (d DatabaseInterface) GetUsersKey(user_id string, chat_id string) (*structures.EditedPrivateKey, error) {
+func (d DatabaseInterface) GetUsersKey(user_id string, chat_id string) ([]byte, error) {
 	chats, err := d.GetUsersChat(user_id, chat_id)
 
 	if err != nil {
@@ -199,7 +199,7 @@ func (d DatabaseInterface) GetUsersKey(user_id string, chat_id string) (*structu
 		return nil, err
 	}
 
-	return &chats.Key, err
+	return chats.Key, err
 }
 
 //Получить пользователей чата
@@ -451,6 +451,9 @@ func (d DatabaseInterface) GetMessages(user_id string, chat_id string, limit int
 		if err != nil {
 			log.Fatal(err)
 		}
+		key, _ := d.GetUsersKey(user_id, chat_id)
+		decrypted_key := security.PrivateKeyFromPEM(key)
+		log.Println(string(security.Decrypt(elem.Text, decrypted_key)))
 		res = append(res, elem)
 	}
 	return res, err
@@ -459,7 +462,7 @@ func (d DatabaseInterface) GetMessages(user_id string, chat_id string, limit int
 //Метод получения расшифрованных сообщений
 func (d DatabaseInterface) GetDecryptedMessages(user_id string, chat_id string, limit int, offset int) ([]structures.MessageToUser, error) {
 	key, _ := d.GetUsersKey(user_id, chat_id)
-	decrypted_key := security.PrivateKeyDecode(key)
+	decrypted_key := security.PrivateKeyFromPEM(key)
 
 	messages, err := d.GetMessages(user_id, chat_id, limit, offset)
 
@@ -531,7 +534,7 @@ func (d DatabaseInterface) SendMessage(chat_id string, user_id string, text stri
 			return false, e
 		}
 
-		decodedKey := security.PrivateKeyDecode(key)
+		decodedKey := security.PrivateKeyFromPEM(key)
 
 		byte_text = security.Encrypt(text, &decodedKey.PublicKey)
 	} else {
@@ -617,7 +620,7 @@ func (d DatabaseInterface) insertUsersChatsArray(
 	var f structures.Chats_array_noid
 	objectId, _ := primitive.ObjectIDFromHex(chat_id)
 	f.Chat_id = objectId
-	f.Key = security.PrivateKeyTransform(privateKey)
+	f.Key = security.PrivateKeyPEM(privateKey)
 	f.Personal = personal
 
 	res, err := d.collectionChatsArray.InsertOne(context.TODO(), f)
@@ -716,7 +719,7 @@ func (d DatabaseInterface) CreateChat(
 	f.Admins_array = append(ar, userId)
 	//Если зашифрованный или персональный чат, то шифруем
 	if secured || personal {
-		f.Key = security.PublicKeyTransform(&publicKey)
+		f.Key = security.PublicKeyPEM(&publicKey)
 	}
 
 	var arr []primitive.ObjectID
@@ -794,4 +797,13 @@ func (d DatabaseInterface) CreateFile(user_id string, file []byte, url *string) 
 	}
 	oid, _ := res.InsertedID.(primitive.ObjectID)
 	return oid.Hex(), err
+}
+
+//Метод регистрации
+func (d DatabaseInterface) Registration(user *structures.CreateUserJSON) (string, error) {
+	//TODO - доделать
+	var res structures.Chat
+	err := d.collectionUsers.FindOne(context.TODO(), bson.D{{Key: "login", Value: user.Login}, {Key: "email", Value: user.Email}}).Decode(&res)
+
+	return res.Id.Hex(), err
 }

@@ -121,9 +121,34 @@ func createUser(id string) structures.TokenJson {
 }
 
 //Функция проверки токена из кук
-func verifyToken(c *http.Cookie, e error) bool {
-	log.Println(c)
+func verifyTokenCookie(c *http.Cookie, e error) bool {
+	if c == nil {
+		return false
+	}
 	token := c.Value
+
+	if token != "" {
+		if _, ok := users[token]; ok {
+
+			a, _ := time.Parse(DATE_FORMAT, users[token].Date)
+			d := (time.Since(a)).Hours()
+			if d >= 12 {
+				updateToken(token)
+			}
+
+			return true
+		}
+	}
+	return false
+}
+
+//Функция проверки токена из кук
+func verifyToken(c string) bool {
+	if c == "" {
+		return false
+	}
+	token := c
+
 	if token != "" {
 		if _, ok := users[token]; ok {
 
@@ -175,7 +200,7 @@ func getUsersOfChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !verifyToken(r.Cookie(COOKIE_NAME)) {
+	if !verifyTokenCookie(r.Cookie(COOKIE_NAME)) {
 		answ.Text = "NOT_AUTHORISED"
 		b, _ := json.Marshal(answ)
 		w.WriteHeader(NOT_AUTHORISED)
@@ -221,7 +246,7 @@ func getUsersChats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !verifyToken(r.Cookie(COOKIE_NAME)) {
+	if !verifyTokenCookie(r.Cookie(COOKIE_NAME)) {
 		answ.Text = "NOT_AUTHORISED"
 		b, _ := json.Marshal(answ)
 		w.WriteHeader(NOT_AUTHORISED)
@@ -282,7 +307,7 @@ func getChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !verifyToken(r.Cookie(COOKIE_NAME)) {
+	if !verifyTokenCookie(r.Cookie(COOKIE_NAME)) {
 		answ.Text = "NOT_AUTHORISED"
 		b, _ := json.Marshal(answ)
 		w.WriteHeader(NOT_AUTHORISED)
@@ -317,7 +342,7 @@ func getMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !verifyToken(r.Cookie(COOKIE_NAME)) {
+	if !verifyTokenCookie(r.Cookie(COOKIE_NAME)) {
 		answ.Text = "NOT_AUTHORISED"
 		b, _ := json.Marshal(answ)
 		w.WriteHeader(NOT_AUTHORISED)
@@ -418,6 +443,7 @@ func authoriseUser(w http.ResponseWriter, r *http.Request) {
 
 	b, _ = json.Marshal(createUser(id)) //Делаем json ответ с токеном
 
+	log.Println(r.Host)
 	ck := http.Cookie{
 		Name:   "token",
 		Value:  token.Token,
@@ -456,7 +482,7 @@ func exit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !verifyToken(r.Cookie(COOKIE_NAME)) {
+	if !verifyTokenCookie(r.Cookie(COOKIE_NAME)) {
 		answ.Text = "token not found"
 		bs, _ := json.Marshal(answ)
 		w.WriteHeader(NOT_FOUND)
@@ -473,7 +499,7 @@ func exit(w http.ResponseWriter, r *http.Request) {
 }
 
 //Проверка токена
-func verifyTokenFunc(w http.ResponseWriter, r *http.Request) {
+func verifyTokenReq(w http.ResponseWriter, r *http.Request) {
 	log.Print(" Verifying token\n")
 	var answ structures.Answer
 
@@ -500,15 +526,23 @@ func verifyTokenFunc(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !verifyToken(r.Cookie(COOKIE_NAME)) {
-		answ.Text = ""
-		bs, _ := json.Marshal(answ)
-		w.WriteHeader(NOT_AUTHORISED)
-		fmt.Fprintf(w, string(bs))
+	cookie, _ := r.Cookie(COOKIE_NAME)
+	var verify bool
+	if cookie == nil {
+		verify = verifyToken(m.Token)
 	} else {
+		verify = verifyTokenCookie(r.Cookie(COOKIE_NAME))
+	}
+
+	if verify {
 		answ.Text = "true"
 		bs, _ := json.Marshal(answ)
 		w.WriteHeader(OK)
+		fmt.Fprintf(w, string(bs))
+	} else {
+		answ.Text = ""
+		bs, _ := json.Marshal(answ)
+		w.WriteHeader(NOT_AUTHORISED)
 		fmt.Fprintf(w, string(bs))
 	}
 }
@@ -541,7 +575,7 @@ func sendMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !verifyToken(r.Cookie(COOKIE_NAME)) {
+	if !verifyTokenCookie(r.Cookie(COOKIE_NAME)) {
 		answ.Text = "NOT_AUTHORISED"
 		bs, _ := json.Marshal(answ)
 		w.WriteHeader(NOT_AUTHORISED)
@@ -593,7 +627,7 @@ func createChat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	//Verivying token
-	if !verifyToken(r.Cookie(COOKIE_NAME)) {
+	if !verifyTokenCookie(r.Cookie(COOKIE_NAME)) {
 		answ.Text = "NOT_AUTHORISED"
 		bs, _ := json.Marshal(answ)
 		w.WriteHeader(NOT_AUTHORISED)
@@ -654,7 +688,7 @@ func getChatKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !verifyToken(r.Cookie(COOKIE_NAME)) {
+	if !verifyTokenCookie(r.Cookie(COOKIE_NAME)) {
 		answ.Text = "NOT_AUTHORISED"
 		bs, _ := json.Marshal(answ)
 		w.WriteHeader(NOT_AUTHORISED)
@@ -678,6 +712,48 @@ func getChatKey(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, string(b))
 }
 
+func registration(w http.ResponseWriter, r *http.Request) {
+	log.Print(" Registration\n")
+	var answ structures.Answer
+
+	enableCors(&w)
+	var m structures.CreateUserJSON
+	b, err := ioutil.ReadAll(r.Body)
+	defer r.Body.Close()
+	if err != nil {
+		answ.Text = err.Error()
+		bs, _ := json.Marshal(answ)
+		w.WriteHeader(NOT_FOUND)
+		http.Error(w, string(bs), NOT_FOUND)
+		return
+	}
+
+	//Unmarshal
+	err = json.Unmarshal(b, &m)
+	if err != nil {
+		answ.Text = err.Error()
+		bs, _ := json.Marshal(answ)
+		w.WriteHeader(NOT_DONE)
+		http.Error(w, string(bs), NOT_DONE)
+		return
+	}
+
+	//Создаем чат (файл)
+	res, err := dbInterface.Registration(&m)
+	if err != nil {
+		answ.Text = err.Error()
+		bs, _ := json.Marshal(answ)
+		w.WriteHeader(OK)
+		fmt.Fprintf(w, string(bs))
+		return
+	}
+
+	answ.Text = res
+	bs, _ := json.Marshal(answ)
+	w.WriteHeader(OK)
+	fmt.Fprintf(w, string(bs))
+}
+
 //Получаем порт и интерфейс для работы с бд
 func InitServer(port string, db *databaseInterface.DatabaseInterface) {
 	mrand.Seed(time.Now().Unix())
@@ -696,11 +772,12 @@ func InitServer(port string, db *databaseInterface.DatabaseInterface) {
 	//TODO: гет-ручка обновления токена
 
 	//POST Ручки
-	http.HandleFunc("/authorise", authoriseUser)     //Авторизовать
-	http.HandleFunc("/exit", exit)                   //Выйти
-	http.HandleFunc("/verifyToken", verifyTokenFunc) //Перепроверить токен
-	http.HandleFunc("/sendMessage", sendMessage)     //Отправить сообщение
-	http.HandleFunc("/createChat", createChat)       //Создать чат
+	http.HandleFunc("/authorise", authoriseUser)    //Авторизовать
+	http.HandleFunc("/exit", exit)                  //Выйти
+	http.HandleFunc("/registration", registration)  //Выйти
+	http.HandleFunc("/verifyToken", verifyTokenReq) //Перепроверить токен
+	http.HandleFunc("/sendMessage", sendMessage)    //Отправить сообщение
+	http.HandleFunc("/createChat", createChat)      //Создать чат
 
 	log.Print(" Starting server\n")
 	log.Print(" Server started\n")

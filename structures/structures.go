@@ -40,7 +40,7 @@ type Chat struct {
 	Admins_array   []primitive.ObjectID
 	Invited_array  []primitive.ObjectID
 	Banned_array   []primitive.ObjectID
-	Key            EditedPublicKey
+	Key            []byte
 }
 
 type Chat_noid struct {
@@ -53,7 +53,7 @@ type Chat_noid struct {
 	Admins_array   []primitive.ObjectID
 	Invited_array  []primitive.ObjectID
 	Banned_array   []primitive.ObjectID
-	Key            EditedPublicKey
+	Key            []byte
 }
 
 type Chat_lite struct {
@@ -138,7 +138,7 @@ type Chats_array struct {
 	Id                   primitive.ObjectID `bson:"_id"`
 	Chat_id              primitive.ObjectID
 	Notifications        bool
-	Key                  EditedPrivateKey
+	Key                  []byte
 	Personal             bool
 	Last_messages_number int
 }
@@ -147,7 +147,7 @@ type Chats_array_noid struct {
 	Chat_id              primitive.ObjectID
 	Notifications        bool
 	Personal             bool
-	Key                  *EditedPrivateKey
+	Key                  []byte
 	Last_messages_number int
 }
 
@@ -220,17 +220,17 @@ type TokenJson struct {
 }
 
 type ChatJSON struct {
-	Id             string          `json:"id"`
-	Chat_name      string          `json:"chat_name"`
-	Chat_logo      string          `json:"chat_logo"`
-	Users_array    []string        `json:"users_array"`
-	Messages_array []string        `json:"messages_array"`
-	Files_array    []string        `json:"files_array"`
-	Options        string          `json:"options"`
-	Admins_array   []string        `json:"admins_array"`
-	Invited_array  []string        `json:"invited_array"`
-	Banned_array   []string        `json:"banned_array"`
-	Key            EditedPublicKey `json:"key"`
+	Id             string   `json:"id"`
+	Chat_name      string   `json:"chat_name"`
+	Chat_logo      string   `json:"chat_logo"`
+	Users_array    []string `json:"users_array"`
+	Messages_array []string `json:"messages_array"`
+	Files_array    []string `json:"files_array"`
+	Options        string   `json:"options"`
+	Admins_array   []string `json:"admins_array"`
+	Invited_array  []string `json:"invited_array"`
+	Banned_array   []string `json:"banned_array"`
+	Key            []byte   `json:"key"`
 }
 
 type FilesJSON struct {
@@ -261,6 +261,13 @@ type UserJSON struct {
 	Status            string   `json:"status"`
 	About             string   `json:"about"`
 	Personal_settings string   `json:"personal_settings"`
+}
+
+type CreateUserJSON struct {
+	Login    string `json:"login"`
+	Password string `json:"password"`
+	Email    string `json:"email"`
+	Phone    string `json:"phone"`
 }
 
 type MessageJSON struct {
