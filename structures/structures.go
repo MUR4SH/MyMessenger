@@ -56,12 +56,24 @@ type Chat_noid struct {
 	Key            []byte
 }
 
+type Count struct {
+	Count int
+}
+
+type Chat_MessagesCount struct {
+	Messages_count int64
+}
+
 type Chat_lite struct {
-	Id          primitive.ObjectID `bson:"_id"`
-	Chat_name   string
-	Chat_logo   string
-	Users_count int64
-	Options     string
+	Id                   primitive.ObjectID `bson:"_id"`
+	Chat_name            string
+	Chat_logo            []Files_Url
+	Users_count          int64
+	Options              []Chat_settings
+	Messages_count       int64
+	Last_message_id      []primitive.ObjectID `bson:"last_message"`
+	Last_message_content MessageToUser
+	User_options         []Chats_array_agregate
 }
 
 type Chat_settings struct {
@@ -129,9 +141,14 @@ type User_lite struct {
 	Login        string
 	Email        *string
 	Phone        *string
-	Photos_array []*string
+	Photos_array []Files_Url
 	Status       string
 	About        string
+}
+
+type Files_Url struct {
+	Id  primitive.ObjectID `bson:"_id"`
+	Url string
 }
 
 type Chats_array struct {
@@ -140,19 +157,23 @@ type Chats_array struct {
 	Notifications        bool
 	Key                  []byte
 	Personal             bool
+	Secured              bool
 	Last_messages_number int
+	User_chat            Chat_lite
 }
 
 type Chats_array_noid struct {
 	Chat_id              primitive.ObjectID
+	User_id              primitive.ObjectID
 	Notifications        bool
 	Personal             bool
+	Secured              bool
 	Key                  []byte
 	Last_messages_number int
 }
 
 type Chats_array_agregate struct {
-	Chats_arrays []Chats_array
+	Chats_array []Chats_array
 }
 
 type Chat_settings_agregate struct {
@@ -164,6 +185,10 @@ type Messages_array_agregate struct {
 }
 
 type Answer struct {
+	Text string `json:"text"`
+}
+
+type AnswerBase64 struct {
 	Text string `json:"text"`
 }
 

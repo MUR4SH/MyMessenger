@@ -60,8 +60,8 @@ func timeoutTokens() {
 	}
 }
 
-func enableCors(w *http.ResponseWriter) {
-	(*w).Header().Set("Access-Control-Allow-Origin", "*")
+func enableCors(w *http.ResponseWriter, r string) {
+	(*w).Header().Set("Access-Control-Allow-Origin", r)
 	(*w).Header().Set("Access-Control-Allow-Credentials", "true")
 	(*w).Header().Set("Access-Control-Allow-Methods", "POST, GET")
 	(*w).Header().Set("Access-Control-Max-Age", "1000")
@@ -191,7 +191,7 @@ func getUsersOfChat(w http.ResponseWriter, r *http.Request) {
 	log.Print(" Getting users of chat\n")
 	var answ structures.Answer
 
-	enableCors(&w)
+	enableCors(&w, r.Header.Get("Origin"))
 	if !r.URL.Query().Has("limit") || !r.URL.Query().Has("offset") || !r.URL.Query().Has("chat_id") {
 		answ.Text = "NOT_FOUND"
 		b, _ := json.Marshal(answ)
@@ -237,7 +237,7 @@ func getUsersChats(w http.ResponseWriter, r *http.Request) {
 	log.Print(" Getting chats of user\n")
 	var answ structures.Answer
 
-	enableCors(&w)
+	enableCors(&w, r.Header.Get("Origin"))
 	if !r.URL.Query().Has("limit") || !r.URL.Query().Has("offset") {
 		answ.Text = "NOT_FOUND"
 		b, _ := json.Marshal(answ)
@@ -245,7 +245,7 @@ func getUsersChats(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, string(b))
 		return
 	}
-
+	log.Println(verifyTokenCookie(r.Cookie(COOKIE_NAME)))
 	if !verifyTokenCookie(r.Cookie(COOKIE_NAME)) {
 		answ.Text = "NOT_AUTHORISED"
 		b, _ := json.Marshal(answ)
@@ -294,18 +294,13 @@ func getUsersChats(w http.ResponseWriter, r *http.Request) {
 }
 
 //Получить чат
-func getChat(w http.ResponseWriter, r *http.Request) {
+func getChatLite(w http.ResponseWriter, r *http.Request) {
 	log.Print(" Getting chat info\n")
 	var answ structures.Answer
+	enableCors(&w, r.Header.Get("Origin"))
 
-	enableCors(&w)
-	if !r.URL.Query().Has("chat_id") {
-		answ.Text = "NO CHAT_ID"
-		b, _ := json.Marshal(answ)
-		w.WriteHeader(NOT_DONE)
-		fmt.Fprintf(w, string(b))
-		return
-	}
+	c, _ := r.Cookie(COOKIE_NAME)
+	log.Println(c.Value)
 
 	if !verifyTokenCookie(r.Cookie(COOKIE_NAME)) {
 		answ.Text = "NOT_AUTHORISED"
@@ -315,7 +310,15 @@ func getChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	arr, err := dbInterface.GetChat(r.URL.Query().Get("chat_id"))
+	if !r.URL.Query().Has("chat_id") {
+		answ.Text = "NO CHAT_ID"
+		b, _ := json.Marshal(answ)
+		w.WriteHeader(NOT_DONE)
+		fmt.Fprintf(w, string(b))
+		return
+	}
+
+	arr, err := dbInterface.GetChat(users[c.Value].Id, r.URL.Query().Get("chat_id"))
 	if err != nil {
 		answ.Text = err.Error()
 		b, _ := json.Marshal(answ)
@@ -325,6 +328,7 @@ func getChat(w http.ResponseWriter, r *http.Request) {
 	}
 	b, _ := json.Marshal(arr)
 	w.WriteHeader(OK)
+	log.Println(string(b))
 	fmt.Fprintf(w, string(b))
 }
 
@@ -333,7 +337,7 @@ func getMessages(w http.ResponseWriter, r *http.Request) {
 	log.Print(" Getting messages of chat\n")
 	var answ structures.Answer
 
-	enableCors(&w)
+	enableCors(&w, r.Header.Get("Origin"))
 	if !r.URL.Query().Has("chat_id") {
 		answ.Text = "No chat_id"
 		b, _ := json.Marshal(answ)
@@ -406,7 +410,7 @@ func authoriseUser(w http.ResponseWriter, r *http.Request) {
 	log.Print(" Authorising\n")
 	var answ structures.Answer
 
-	enableCors(&w)
+	enableCors(&w, r.Header.Get("Origin"))
 
 	var m structures.UserAuthorise
 	b, err := ioutil.ReadAll(r.Body)
@@ -425,6 +429,7 @@ func authoriseUser(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		answ.Text = err.Error()
 		b, _ := json.Marshal(answ)
+		log.Println(answ.Text)
 		w.WriteHeader(NOT_FOUND)
 		http.Error(w, string(b), NOT_FOUND)
 		return
@@ -459,7 +464,7 @@ func exit(w http.ResponseWriter, r *http.Request) {
 	log.Print(" Exiting\n")
 	var answ structures.Answer
 
-	enableCors(&w)
+	enableCors(&w, r.Header.Get("Origin"))
 
 	var m structures.TokenJson
 	b, err := ioutil.ReadAll(r.Body)
@@ -503,7 +508,7 @@ func verifyTokenReq(w http.ResponseWriter, r *http.Request) {
 	log.Print(" Verifying token\n")
 	var answ structures.Answer
 
-	enableCors(&w)
+	enableCors(&w, r.Header.Get("Origin"))
 
 	var m structures.TokenJson
 	b, err := ioutil.ReadAll(r.Body)
@@ -535,7 +540,9 @@ func verifyTokenReq(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if verify {
-		answ.Text = "true"
+		answ.Text = users[cookie.Value].Id
+		log.Printf("id")
+		log.Printf(answ.Text)
 		bs, _ := json.Marshal(answ)
 		w.WriteHeader(OK)
 		fmt.Fprintf(w, string(bs))
@@ -552,7 +559,7 @@ func sendMessage(w http.ResponseWriter, r *http.Request) {
 	log.Print(" Sending message\n")
 	var answ structures.Answer
 
-	enableCors(&w)
+	enableCors(&w, r.Header.Get("Origin"))
 
 	var m structures.MessageJSON
 	b, err := ioutil.ReadAll(r.Body)
@@ -604,7 +611,7 @@ func createChat(w http.ResponseWriter, r *http.Request) {
 	log.Print(" Creating chat\n")
 	var answ structures.Answer
 
-	enableCors(&w)
+	enableCors(&w, r.Header.Get("Origin"))
 	var m structures.ChatCreationJSON
 	b, err := ioutil.ReadAll(r.Body)
 	defer r.Body.Close()
@@ -678,7 +685,7 @@ func getChatKey(w http.ResponseWriter, r *http.Request) {
 	log.Print(" Getting users key\n")
 	var answ structures.Answer
 
-	enableCors(&w)
+	enableCors(&w, r.Header.Get("Origin"))
 
 	if !r.URL.Query().Has("chat_id") {
 		answ.Text = "NO CHAT_ID"
@@ -716,7 +723,7 @@ func registration(w http.ResponseWriter, r *http.Request) {
 	log.Print(" Registration\n")
 	var answ structures.Answer
 
-	enableCors(&w)
+	enableCors(&w, r.Header.Get("Origin"))
 	var m structures.CreateUserJSON
 	b, err := ioutil.ReadAll(r.Body)
 	defer r.Body.Close()
@@ -754,6 +761,44 @@ func registration(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, string(bs))
 }
 
+func getUser(w http.ResponseWriter, r *http.Request) {
+	log.Print(" Getting user\n")
+	var answ structures.Answer
+
+	enableCors(&w, r.Header.Get("Origin"))
+
+	if !r.URL.Query().Has("user_id") {
+		answ.Text = "NO USER_ID"
+		bs, _ := json.Marshal(answ)
+		w.WriteHeader(NOT_DONE)
+		fmt.Fprintf(w, string(bs))
+		return
+	}
+
+	if !verifyTokenCookie(r.Cookie(COOKIE_NAME)) {
+		answ.Text = "NOT_AUTHORISED"
+		bs, _ := json.Marshal(answ)
+		w.WriteHeader(NOT_AUTHORISED)
+		fmt.Fprintf(w, string(bs))
+		return
+	}
+
+	c, _ := r.Cookie(COOKIE_NAME)
+
+	res, err := dbInterface.GetUserId(users[c.Value].Id, r.URL.Query().Get("user_id"))
+	if err != nil {
+		answ.Text = "Error getting user"
+		bs, _ := json.Marshal(answ)
+		w.WriteHeader(OK)
+		fmt.Fprintf(w, string(bs))
+		return
+	}
+
+	b, _ := json.Marshal(res)
+	w.WriteHeader(OK)
+	fmt.Fprintf(w, string(b))
+}
+
 //Получаем порт и интерфейс для работы с бд
 func InitServer(port string, db *databaseInterface.DatabaseInterface) {
 	mrand.Seed(time.Now().Unix())
@@ -766,9 +811,10 @@ func InitServer(port string, db *databaseInterface.DatabaseInterface) {
 	//GET Ручки
 	http.HandleFunc("/usersChats", getUsersChats) //Получить чаты пользователя
 	http.HandleFunc("/chatUsers", getUsersOfChat) //Получить пользователей чата
-	http.HandleFunc("/chat", getChat)             //Получить информацию чата
+	http.HandleFunc("/chat", getChatLite)         //Получить информацию чата
 	http.HandleFunc("/messages", getMessages)     //Получить сообщения чата
 	http.HandleFunc("/chatKey", getChatKey)       //Получить ключ чата
+	http.HandleFunc("/user", getUser)             //Получить ключ чата
 	//TODO: гет-ручка обновления токена
 
 	//POST Ручки
