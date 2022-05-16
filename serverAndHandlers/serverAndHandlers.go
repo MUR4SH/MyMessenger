@@ -300,7 +300,6 @@ func getChatLite(w http.ResponseWriter, r *http.Request) {
 	enableCors(&w, r.Header.Get("Origin"))
 
 	c, _ := r.Cookie(COOKIE_NAME)
-	log.Println(c.Value)
 
 	if !verifyTokenCookie(r.Cookie(COOKIE_NAME)) {
 		answ.Text = "NOT_AUTHORISED"
@@ -574,7 +573,7 @@ func sendMessage(w http.ResponseWriter, r *http.Request) {
 
 	//Unmarshal
 	err = json.Unmarshal(b, &m)
-	if err != nil {
+	if err != nil || len(m.Text) == 0 {
 		answ.Text = err.Error()
 		bs, _ := json.Marshal(answ)
 		w.WriteHeader(NOT_DONE)
