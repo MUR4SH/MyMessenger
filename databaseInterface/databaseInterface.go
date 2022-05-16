@@ -86,6 +86,7 @@ func New(
 //Получаем конкретный чат пользователя
 func (d DatabaseInterface) GetUsersChat(user_id string, chat_id string) (structures.Chats_array, error) {
 	var res []structures.Chats_array_agregate
+	var r structures.Chats_array
 	userId, _ := primitive.ObjectIDFromHex(user_id)
 	chatId, err := primitive.ObjectIDFromHex(chat_id)
 	if err != nil {
@@ -127,7 +128,11 @@ func (d DatabaseInterface) GetUsersChat(user_id string, chat_id string) (structu
 		res = append(res, elem)
 	}
 
-	return res[0].Chats_array[0], err
+	if len(res[0].Chats_array) != 0 {
+		return res[0].Chats_array[0], err
+	} else {
+		return r, err
+	}
 }
 
 //Получаем список чатов пользователя
@@ -596,7 +601,7 @@ func (d DatabaseInterface) GetMessages(user_id string, chat_id string, limit int
 	cur, err := (d.collectionMessages.Aggregate(context.TODO(), mongo.Pipeline{
 		bson.D{{Key: "$match", Value: bson.D{{Key: "chat_id", Value: objectId}}}},
 		bson.D{{Key: "$sort", Value: bson.D{
-			{Key: "gtm_date", Value: 1},
+			{Key: "gtm_date", Value: -1},
 		}}},
 		bson.D{{Key: "$skip", Value: offset}},
 		bson.D{{Key: "$limit", Value: limit}},
@@ -636,6 +641,16 @@ func (d DatabaseInterface) GetMessages(user_id string, chat_id string, limit int
 			}},
 		}}},
 	}))
+
+	v, _ := d.GetChatMessagesCount(chat_id)
+	update := bson.D{
+		primitive.E{Key: "$set", Value: bson.D{
+			primitive.E{Key: "last_messages_number", Value: v},
+		}},
+	}
+	userId, _ := primitive.ObjectIDFromHex(user_id)
+	_, err = d.collectionChatsArray.UpdateOne(context.TODO(), bson.D{{Key: "user_id", Value: userId}, {Key: "chat_id", Value: objectId}}, update)
+
 	for cur.Next(context.TODO()) {
 		var elem structures.MessageToUser
 		err := cur.Decode(&elem)
@@ -646,6 +661,7 @@ func (d DatabaseInterface) GetMessages(user_id string, chat_id string, limit int
 
 		res = append(res, elem)
 	}
+
 	return res, err
 }
 
@@ -702,6 +718,40 @@ func (d DatabaseInterface) SendEncryptedMessage(chat_id string, user_id string, 
 
 	_, err = d.collectionChats.UpdateOne(context.TODO(), bson.D{{Key: "_id", Value: objectId}}, update)
 	return err == nil, err
+}
+
+func (d DatabaseInterface) getMessagesCount(chat_id string) int {
+	chatId, _ := primitive.ObjectIDFromHex(chat_id)
+
+	cur, err := (d.collectionChats.Aggregate(context.TODO(), mongo.Pipeline{
+		bson.D{{Key: "$match", Value: bson.D{{Key: "_id", Value: chatId}}}},
+		bson.D{{Key: "$project", Value: bson.D{
+			{
+				Key: "count", Value: bson.D{{
+					Key: "$size", Value: "$messages_array",
+				}},
+			},
+			{
+				Key: "_id", Value: 0,
+			},
+		}}},
+	}))
+
+	if err != nil {
+		return -1
+	}
+
+	for cur.Next(context.TODO()) {
+		var elem structures.Count
+		err := cur.Decode(&elem)
+		if err != nil {
+			log.Fatal(err)
+		}
+		log.Println(elem)
+		return elem.Count
+	}
+
+	return -1
 }
 
 //Метод отправки сообщений
