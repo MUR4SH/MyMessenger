@@ -92,8 +92,6 @@ func (d DatabaseInterface) GetUsersChat(user_id string, chat_id string) (structu
 	if err != nil {
 		log.Println("Invalid id")
 	}
-	log.Println(user_id)
-	log.Println(chat_id)
 
 	result, err := (d.collectionUsers.Aggregate(context.TODO(), mongo.Pipeline{
 		bson.D{{Key: "$match", Value: bson.D{{Key: "_id", Value: userId}}}},
@@ -202,17 +200,60 @@ func (d DatabaseInterface) GetUser(login string, limit int, offset int) ([]struc
 }
 
 //Получаем данные пользователя по id
-func (d DatabaseInterface) GetUserId(user_id string, requested_user_id string) (structures.User, error) {
-	var res structures.User
-	reqUserId, err := primitive.ObjectIDFromHex(requested_user_id)
+func (d DatabaseInterface) GetUserId(user_id string, requested_user_id string) (structures.User_lite, error) {
+	var res structures.User_lite
+	reqUserId, _ := primitive.ObjectIDFromHex(requested_user_id)
 	//userId, err := primitive.ObjectIDFromHex(user_id)
 
-	filter := bson.D{primitive.E{Key: "_id", Value: reqUserId}}
-	err = d.collectionUsers.FindOne(context.TODO(), filter).Decode(&res)
+	cur, err := (d.collectionUsers.Aggregate(context.TODO(), mongo.Pipeline{
+		bson.D{{Key: "$match", Value: bson.D{{Key: "_id", Value: reqUserId}}}},
+		bson.D{{Key: "$project", Value: bson.D{
+			{Key: "password", Value: 0},
+			{Key: "chats_array", Value: 0},
+			{Key: "email", Value: 0},
+			{Key: "phone", Value: 0},
+			{Key: "personal_settings", Value: 0},
+		},
+		}},
+		bson.D{{Key: "$lookup", Value: bson.D{
+			{Key: "from", Value: "Files"},
+			{Key: "localField", Value: "photos_array"},
+			{Key: "foreignField", Value: "_id"},
+			{Key: "as", Value: "photos_array"},
+			{Key: "pipeline", Value: []bson.D{
+				{{
+					Key: "$project", Value: bson.D{
+						{Key: "url", Value: 1},
+					},
+				}},
+			}},
+		},
+		}},
+		bson.D{{Key: "$lookup", Value: bson.D{
+			{Key: "from", Value: "Personal_setting"},
+			{Key: "localField", Value: "personal_setting"},
+			{Key: "foreignField", Value: "_id"},
+			{Key: "as", Value: "personal_setting"},
+		},
+		}},
+	}))
+
+	for cur.Next(context.TODO()) {
+		var elem structures.User_lite
+		err := cur.Decode(&elem)
+		if err != nil {
+			log.Fatal(err)
+		}
+		res = elem
+	}
 
 	if user_id != requested_user_id {
-		res.Email = nil
-		res.Phone = nil
+		if !res.Personal_settings.Email_visible {
+			res.Email = nil
+		}
+		if !res.Personal_settings.Phone_visible {
+			res.Phone = nil
+		}
 	}
 
 	return res, err
@@ -221,8 +262,6 @@ func (d DatabaseInterface) GetUserId(user_id string, requested_user_id string) (
 //Получить ключ пользователя
 func (d DatabaseInterface) GetUsersKey(user_id string, chat_id string) ([]byte, error) {
 	chats, err := d.GetUsersChat(user_id, chat_id)
-
-	log.Println(chats)
 
 	if err != nil {
 		log.Fatal("Error getting chats")

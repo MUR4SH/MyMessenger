@@ -137,13 +137,14 @@ type Chat_User_aggregate_lite struct {
 }
 
 type User_lite struct {
-	Id           primitive.ObjectID `bson:"_id"`
-	Login        string
-	Email        *string
-	Phone        *string
-	Photos_array []Files_Url
-	Status       string
-	About        string
+	Id                primitive.ObjectID `bson:"_id"`
+	Login             string
+	Email             *string
+	Phone             *string
+	Photos_array      []Files_Url
+	Status            string
+	About             string
+	Personal_settings Personal_settings
 }
 
 type Files_Url struct {
