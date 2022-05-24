@@ -28,7 +28,7 @@ var dbInterface *databaseInterface.DatabaseInterface
 
 const COOKIE_NAME = "token"
 const NOT_DONE = 501
-const NOT_AUTHORISED = 500
+const NOT_AUTHORISED = 200
 const NOT_FOUND = 400
 const OK = 200
 
@@ -63,9 +63,9 @@ func timeoutTokens() {
 func enableCors(w *http.ResponseWriter, r string) {
 	(*w).Header().Set("Access-Control-Allow-Origin", r)
 	(*w).Header().Set("Access-Control-Allow-Credentials", "true")
-	(*w).Header().Set("Access-Control-Allow-Methods", "POST, GET")
+	(*w).Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS")
 	(*w).Header().Set("Access-Control-Max-Age", "1000")
-	(*w).Header().Set("Access-Control-Allow-Headers", "Access-Control-Allow-Headers, Origin,Accept, X-Requested-With, Content-Type, Access-Control-Request-Method, Access-Control-Request-Headers")
+	(*w).Header().Set("Access-Control-Allow-Headers", "Access-Control-Allow-Headers, Origin, Accept, X-Requested-With, Content-Type, Access-Control-Request-Method, Access-Control-Request-Headers")
 }
 
 //Функция шифрования пароля
@@ -681,7 +681,7 @@ func createChat(w http.ResponseWriter, r *http.Request) {
 }
 
 func getChatKey(w http.ResponseWriter, r *http.Request) {
-	log.Print(" Getting users key\n")
+	log.Print(" Getting user's key\n")
 	var answ structures.Answer
 
 	enableCors(&w, r.Header.Get("Origin"))
