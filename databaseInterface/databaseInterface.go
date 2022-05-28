@@ -190,6 +190,34 @@ func (d DatabaseInterface) GetUsersChats(user_id string, limit int, offset int) 
 	return res, err
 }
 
+//Получаем список id-чатов пользователя
+func (d DatabaseInterface) GetUsersChatsId(user_id string) ([]structures.Chat_Id, error) {
+	var res []structures.Chat_Id
+	userId, err := primitive.ObjectIDFromHex(user_id)
+	if err != nil {
+		log.Println("Invalid id")
+	}
+
+	result, err := (d.collectionChatsArray.Aggregate(context.TODO(), mongo.Pipeline{
+		bson.D{{Key: "$match", Value: bson.D{{Key: "user_id", Value: userId}}}},
+		bson.D{{Key: "$project", Value: bson.D{
+			{Key: "_id", Value: 0},
+			{Key: "chat_id", Value: 1},
+		}}},
+	}))
+
+	for result.Next(context.TODO()) {
+		var elem structures.Chat_Id
+		err := result.Decode(&elem)
+		if err != nil {
+			log.Fatal(err)
+		}
+		res = append(res, elem)
+	}
+
+	return res, err
+}
+
 //Получаем данные пользователя
 //Агрегируем настройки и список чатов
 func (d DatabaseInterface) GetUser(login string, limit int, offset int) ([]structures.User, error) {
@@ -416,14 +444,9 @@ func (d DatabaseInterface) GetChatMessagesCount(chat_id string) (int, error) {
 	if err != nil {
 		log.Println("Invalid id")
 	}
-	cur, err := (d.collectionChats.Aggregate(context.TODO(), mongo.Pipeline{
-		bson.D{{Key: "$match", Value: bson.D{{Key: "_id", Value: objectId}}}},
-		bson.D{{Key: "$project", Value: bson.D{
-			{Key: "messages_count", Value: bson.D{
-				{Key: "$size", Value: "$messages_array"},
-			}},
-			{Key: "_id", Value: 0},
-		}}},
+	cur, err := (d.collectionMessages.Aggregate(context.TODO(), mongo.Pipeline{
+		bson.D{{Key: "$match", Value: bson.D{{Key: "chat_id", Value: objectId}}}},
+		bson.D{{Key: "$count", Value: "count"}},
 	}))
 
 	if err != nil {
@@ -432,12 +455,12 @@ func (d DatabaseInterface) GetChatMessagesCount(chat_id string) (int, error) {
 	}
 
 	for cur.Next(context.TODO()) {
-		var elem structures.Chat_MessagesCount
+		var elem structures.Count
 		err := cur.Decode(&elem)
 		if err != nil {
 			log.Fatal(err)
 		}
-		return int(elem.Messages_count), err
+		return int(elem.Count), err
 	}
 
 	return res, err
@@ -457,12 +480,6 @@ func (d DatabaseInterface) GetChat(user_id string, chat_id string) (structures.C
 		bson.D{{Key: "$project", Value: bson.D{
 			{Key: "users_count", Value: bson.D{
 				{Key: "$size", Value: "$users_array"},
-			}},
-			{Key: "messages_count", Value: bson.D{
-				{Key: "$size", Value: "$messages_array"},
-			}},
-			{Key: "last_message", Value: bson.D{
-				{Key: "$slice", Value: []interface{}{"$messages_array", -1}},
 			}},
 			{Key: "_id", Value: 1},
 			{Key: "chat_name", Value: 1},
@@ -492,6 +509,44 @@ func (d DatabaseInterface) GetChat(user_id string, chat_id string) (structures.C
 				{Key: "as", Value: "options"},
 			},
 		}},
+		bson.D{{
+			Key: "$lookup", Value: bson.D{
+				{Key: "from", Value: "Messages"},
+				{Key: "localField", Value: "_id"},
+				{Key: "foreignField", Value: "chat_id"},
+				{Key: "as", Value: "messages_count"},
+				{Key: "pipeline", Value: []bson.D{
+					{{
+						Key: "$count", Value: "count",
+					}},
+				}},
+			},
+		}},
+		bson.D{{
+			Key: "$lookup", Value: bson.D{
+				{Key: "from", Value: "Messages"},
+				{Key: "localField", Value: "_id"},
+				{Key: "foreignField", Value: "chat_id"},
+				{Key: "as", Value: "last_message"},
+				{Key: "pipeline", Value: []bson.D{
+					{{
+						Key: "$sort", Value: bson.D{
+							{Key: "gtm_date", Value: -1},
+						},
+					}},
+					{{
+						Key: "$limit", Value: 1,
+					}},
+					{{
+						Key: "$project", Value: bson.D{{
+							Key: "_id", Value: 1,
+						}},
+					}},
+				}},
+			},
+		}},
+		bson.D{{Key: "$unwind", Value: "$messages_count"}},
+		bson.D{{Key: "$unwind", Value: "$last_message"}},
 	}))
 
 	if err != nil {
@@ -507,8 +562,8 @@ func (d DatabaseInterface) GetChat(user_id string, chat_id string) (structures.C
 		}
 		var m structures.MessageToUser
 
-		if len(elem.Last_message_id) > 0 {
-			m, _ = d.GetMessage(user_id, elem.Last_message_id[0].Hex(), elem.Id.Hex())
+		if elem.Last_message_id != nil {
+			m, _ = d.GetMessage(user_id, elem.Last_message_id.Id.Hex(), elem.Id.Hex())
 		}
 
 		elem.Last_message_content = m
@@ -743,19 +798,11 @@ func (d DatabaseInterface) SendEncryptedMessage(chat_id string, user_id string, 
 	userId, _ := primitive.ObjectIDFromHex(user_id)
 	msg.User_id = userId
 
-	ins, err := d.collectionMessages.InsertOne(context.TODO(), msg)
+	_, err := d.collectionMessages.InsertOne(context.TODO(), msg)
 	if err != nil {
 		log.Println(err)
 		return false, err
 	}
-	oid := ins.InsertedID
-	update := bson.D{
-		primitive.E{Key: "$push", Value: bson.D{
-			primitive.E{Key: "messages_array", Value: oid},
-		}},
-	}
-
-	_, err = d.collectionChats.UpdateOne(context.TODO(), bson.D{{Key: "_id", Value: objectId}}, update)
 	return err == nil, err
 }
 
@@ -763,17 +810,8 @@ func (d DatabaseInterface) getMessagesCount(chat_id string) int {
 	chatId, _ := primitive.ObjectIDFromHex(chat_id)
 
 	cur, err := (d.collectionChats.Aggregate(context.TODO(), mongo.Pipeline{
-		bson.D{{Key: "$match", Value: bson.D{{Key: "_id", Value: chatId}}}},
-		bson.D{{Key: "$project", Value: bson.D{
-			{
-				Key: "count", Value: bson.D{{
-					Key: "$size", Value: "$messages_array",
-				}},
-			},
-			{
-				Key: "_id", Value: 0,
-			},
-		}}},
+		bson.D{{Key: "$match", Value: bson.D{{Key: "chat_id", Value: chatId}}}},
+		bson.D{{Key: "$count", Value: "count"}},
 	}))
 
 	if err != nil {
@@ -823,19 +861,11 @@ func (d DatabaseInterface) SendMessage(chat_id string, user_id string, text stri
 	userId, _ := primitive.ObjectIDFromHex(user_id)
 	msg.User_id = userId
 
-	ins, err := d.collectionMessages.InsertOne(context.TODO(), msg)
+	_, err := d.collectionMessages.InsertOne(context.TODO(), msg)
 	if err != nil {
 		log.Println(err)
 		return false, err
 	}
-	oid := ins.InsertedID
-	update := bson.D{
-		primitive.E{Key: "$push", Value: bson.D{
-			primitive.E{Key: "messages_array", Value: oid},
-		}},
-	}
-
-	_, err = d.collectionChats.UpdateOne(context.TODO(), bson.D{{Key: "_id", Value: objectId}}, update)
 	return err == nil, err
 }
 
@@ -1015,7 +1045,6 @@ func (d DatabaseInterface) CreateChat(
 	}
 	f.Users_array = arr
 
-	f.Messages_array = []primitive.ObjectID{}
 	f.Files_array = []primitive.ObjectID{}
 	f.Invited_array = []primitive.ObjectID{}
 	f.Banned_array = []primitive.ObjectID{}

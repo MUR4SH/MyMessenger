@@ -30,30 +30,28 @@ type EditedCRTValue struct {
 }
 
 type Chat struct {
-	Id             primitive.ObjectID `bson:"_id"`
-	Chat_name      string
-	Chat_logo      primitive.ObjectID
-	Users_array    []primitive.ObjectID
-	Messages_array []primitive.ObjectID
-	Files_array    []primitive.ObjectID
-	Options        primitive.ObjectID
-	Admins_array   []primitive.ObjectID
-	Invited_array  []primitive.ObjectID
-	Banned_array   []primitive.ObjectID
-	Key            []byte
+	Id            primitive.ObjectID `bson:"_id"`
+	Chat_name     string
+	Chat_logo     primitive.ObjectID
+	Users_array   []primitive.ObjectID
+	Files_array   []primitive.ObjectID
+	Options       primitive.ObjectID
+	Admins_array  []primitive.ObjectID
+	Invited_array []primitive.ObjectID
+	Banned_array  []primitive.ObjectID
+	Key           []byte
 }
 
 type Chat_noid struct {
-	Chat_name      string
-	Chat_logo      primitive.ObjectID
-	Users_array    []primitive.ObjectID
-	Messages_array []primitive.ObjectID
-	Files_array    []primitive.ObjectID
-	Options        primitive.ObjectID
-	Admins_array   []primitive.ObjectID
-	Invited_array  []primitive.ObjectID
-	Banned_array   []primitive.ObjectID
-	Key            []byte
+	Chat_name     string
+	Chat_logo     primitive.ObjectID
+	Users_array   []primitive.ObjectID
+	Files_array   []primitive.ObjectID
+	Options       primitive.ObjectID
+	Admins_array  []primitive.ObjectID
+	Invited_array []primitive.ObjectID
+	Banned_array  []primitive.ObjectID
+	Key           []byte
 }
 
 type Count struct {
@@ -61,7 +59,11 @@ type Count struct {
 }
 
 type Chat_MessagesCount struct {
-	Messages_count int64
+	Count int64
+}
+
+type MessageIdArray struct {
+	Id primitive.ObjectID `bson:"_id"`
 }
 
 type Chat_lite struct {
@@ -70,8 +72,8 @@ type Chat_lite struct {
 	Chat_logo            []Files_Url
 	Users_count          int64
 	Options              []Chat_settings
-	Messages_count       int64
-	Last_message_id      []primitive.ObjectID `bson:"last_message"`
+	Messages_count       Chat_MessagesCount
+	Last_message_id      *MessageIdArray `bson:"last_message"`
 	Last_message_content MessageToUser
 	User_options         []Chats_array_agregate
 }
@@ -177,6 +179,14 @@ type Chats_array_agregate struct {
 	Chats_array []Chats_array
 }
 
+type Chat_Id struct {
+	Chat_id primitive.ObjectID `bson:"chat_id"`
+}
+
+type Chats_array_Id struct {
+	Chats_array []Chats_array
+}
+
 type Chat_settings_agregate struct {
 	Options []Chat_settings
 }
@@ -246,17 +256,16 @@ type TokenJson struct {
 }
 
 type ChatJSON struct {
-	Id             string   `json:"id"`
-	Chat_name      string   `json:"chat_name"`
-	Chat_logo      string   `json:"chat_logo"`
-	Users_array    []string `json:"users_array"`
-	Messages_array []string `json:"messages_array"`
-	Files_array    []string `json:"files_array"`
-	Options        string   `json:"options"`
-	Admins_array   []string `json:"admins_array"`
-	Invited_array  []string `json:"invited_array"`
-	Banned_array   []string `json:"banned_array"`
-	Key            []byte   `json:"key"`
+	Id            string   `json:"id"`
+	Chat_name     string   `json:"chat_name"`
+	Chat_logo     string   `json:"chat_logo"`
+	Users_array   []string `json:"users_array"`
+	Files_array   []string `json:"files_array"`
+	Options       string   `json:"options"`
+	Admins_array  []string `json:"admins_array"`
+	Invited_array []string `json:"invited_array"`
+	Banned_array  []string `json:"banned_array"`
+	Key           []byte   `json:"key"`
 }
 
 type FilesJSON struct {
