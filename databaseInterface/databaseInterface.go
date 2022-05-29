@@ -149,6 +149,8 @@ func (d DatabaseInterface) GetUsersChats(user_id string, limit int, offset int) 
 		offset = 0
 	}
 
+	log.Println(user_id)
+
 	result, err := (d.collectionUsers.Aggregate(context.TODO(), mongo.Pipeline{
 		bson.D{{Key: "$match", Value: bson.D{{Key: "_id", Value: userId}}}},
 		bson.D{{Key: "$lookup", Value: bson.D{
@@ -563,6 +565,8 @@ func (d DatabaseInterface) GetChat(user_id string, chat_id string) (structures.C
 		var m structures.MessageToUser
 
 		if elem.Last_message_id != nil {
+			settings, _ := d.GetUsersChat(user_id, chat_id)
+			elem.Last_messages_number = settings.Last_messages_number
 			m, _ = d.GetMessage(user_id, elem.Last_message_id.Id.Hex(), elem.Id.Hex())
 		}
 
@@ -699,6 +703,91 @@ func (d DatabaseInterface) GetMessages(user_id string, chat_id string, limit int
 		}}},
 		bson.D{{Key: "$skip", Value: offset}},
 		bson.D{{Key: "$limit", Value: limit}},
+		bson.D{{Key: "$project", Value: bson.D{
+			{Key: "expiredAt", Value: 0},
+		}}},
+		bson.D{{Key: "$lookup", Value: bson.D{
+			{Key: "from", Value: "Users"},
+			{Key: "localField", Value: "user_id"},
+			{Key: "foreignField", Value: "_id"},
+			{Key: "as", Value: "user"},
+			{Key: "pipeline", Value: []bson.D{
+				{{
+					Key: "$project", Value: bson.D{
+						{Key: "password", Value: 0},
+						{Key: "chats_array", Value: 0},
+						{Key: "email", Value: 0},
+						{Key: "phone", Value: 0},
+						{Key: "personal_settings", Value: 0},
+					},
+				}},
+				{{
+					Key: "$lookup", Value: bson.D{
+						{Key: "from", Value: "Files"},
+						{Key: "localField", Value: "photos_array"},
+						{Key: "foreignField", Value: "_id"},
+						{Key: "as", Value: "photos_array"},
+						{Key: "pipeline", Value: []bson.D{
+							{{
+								Key: "$project", Value: bson.D{
+									{Key: "url", Value: 1},
+								},
+							}},
+						}},
+					},
+				}},
+			}},
+		}}},
+	}))
+
+	v, _ := d.GetChatMessagesCount(chat_id)
+	update := bson.D{
+		primitive.E{Key: "$set", Value: bson.D{
+			primitive.E{Key: "last_messages_number", Value: v},
+		}},
+	}
+	userId, _ := primitive.ObjectIDFromHex(user_id)
+	_, err = d.collectionChatsArray.UpdateOne(context.TODO(), bson.D{{Key: "user_id", Value: userId}, {Key: "chat_id", Value: objectId}}, update)
+
+	for cur.Next(context.TODO()) {
+		var elem structures.MessageToUser
+		err := cur.Decode(&elem)
+		if err != nil {
+			log.Fatal(err)
+			return nil, err
+		}
+
+		res = append(res, elem)
+	}
+
+	return res, err
+}
+
+//Получить новые сообщения
+func (d DatabaseInterface) GetNewMessages(user_id string, chat_id string) ([]structures.MessageToUser, error) {
+	var res []structures.MessageToUser
+	objectId, err := primitive.ObjectIDFromHex(chat_id)
+
+	if err != nil {
+		log.Println(err)
+		return nil, err
+	}
+
+	//Если пользователь не состоит в чате
+	if !d.UserInChat(user_id, chat_id) {
+		var er error
+		log.Println("User not in chat - getting messages")
+		return nil, er
+	}
+
+	settings, _ := d.GetUsersChat(user_id, chat_id)
+	limit := settings.Last_messages_number
+	cur, _ := (d.collectionMessages.Aggregate(context.TODO(), mongo.Pipeline{
+		bson.D{{Key: "$match", Value: bson.D{{Key: "chat_id", Value: objectId}}}},
+		bson.D{{Key: "$sort", Value: bson.D{
+			{Key: "gtm_date", Value: 1},
+		}}},
+		bson.D{{Key: "$skip", Value: limit}},
 		bson.D{{Key: "$project", Value: bson.D{
 			{Key: "expiredAt", Value: 0},
 		}}},

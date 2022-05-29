@@ -71,6 +71,7 @@ type Chat_lite struct {
 	Chat_name            string
 	Chat_logo            []Files_Url
 	Users_count          int64
+	Last_messages_number int
 	Options              []Chat_settings
 	Messages_count       Chat_MessagesCount
 	Last_message_id      *MessageIdArray `bson:"last_message"`

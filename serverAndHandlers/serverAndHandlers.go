@@ -341,7 +341,6 @@ func getChatLite(w http.ResponseWriter, r *http.Request) {
 	}
 	b, _ := json.Marshal(arr)
 	w.WriteHeader(OK)
-	log.Println(string(b))
 	fmt.Fprintf(w, string(b))
 }
 
@@ -461,7 +460,6 @@ func authoriseUser(w http.ResponseWriter, r *http.Request) {
 
 	b, _ = json.Marshal(createUser(id)) //Делаем json ответ с токеном
 
-	log.Println(r.Host)
 	ck := http.Cookie{
 		Name:   "token",
 		Value:  token.Token,
@@ -603,10 +601,6 @@ func sendMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	for i := 0; i < len(chatUsers[m.Chat_id]); i++ {
-		chatUsers[m.Chat_id][i].WriteMessage(websocket.TextMessage, []byte(m.Chat_id))
-	}
-
 	c, _ := r.Cookie(COOKIE_NAME)
 
 	res, err := dbInterface.SendMessage(m.Chat_id, users[c.Value].Id, m.Text)
@@ -620,12 +614,12 @@ func sendMessage(w http.ResponseWriter, r *http.Request) {
 	answ.Text = "success"
 	bs, _ := json.Marshal(answ)
 
+	w.WriteHeader(OK)
+	fmt.Fprintf(w, string(bs))
+
 	for i := 0; i < len(chatUsers[m.Chat_id]); i++ {
 		chatUsers[m.Chat_id][i].WriteMessage(websocket.TextMessage, []byte(m.Chat_id))
 	}
-
-	w.WriteHeader(OK)
-	fmt.Fprintf(w, string(bs))
 }
 
 //Ручка создания чата
@@ -843,33 +837,6 @@ func webSocket(w http.ResponseWriter, r *http.Request) {
 	updateChats(connection, re, c)
 }
 
-func webSocketSend(w http.ResponseWriter, r *http.Request) {
-	log.Print(" Sending ws message\n")
-	var answ structures.Answer
-
-	enableCors(&w, r.Header.Get("Origin"))
-
-	if !verifyTokenCookie(r.Cookie(COOKIE_NAME)) {
-		answ.Text = "NOT_AUTHORISED"
-		bs, _ := json.Marshal(answ)
-		w.WriteHeader(NOT_AUTHORISED)
-		fmt.Fprintf(w, string(bs))
-		return
-	}
-
-	connection, _ := upgrader.Upgrade(w, r, nil)
-	for {
-		mt, message, err := connection.ReadMessage()
-
-		if err != nil || mt == websocket.CloseMessage {
-			break // Выходим из цикла, если клиент пытается закрыть соединение или связь с клиентом прервана
-		}
-
-		connection.WriteMessage(websocket.TextMessage, message)
-	}
-	connection.Close() // Закрываем соединение
-}
-
 func updateChats(connection *websocket.Conn, array []structures.Chat_Id, user_id string) {
 	log.Println(array)
 	for i := 0; i < len(array); i++ {
@@ -894,6 +861,43 @@ func deletChatUser(connection *websocket.Conn) {
 	}
 }
 
+//Получаем новые сообщения из чата
+func getNewMessages(w http.ResponseWriter, r *http.Request) {
+	log.Print(" Getting new messages of chat\n")
+	var answ structures.Answer
+
+	enableCors(&w, r.Header.Get("Origin"))
+	if !r.URL.Query().Has("chat_id") {
+		answ.Text = "No chat_id"
+		b, _ := json.Marshal(answ)
+		w.WriteHeader(NOT_DONE)
+		fmt.Fprintf(w, string(b))
+		return
+	}
+
+	if !verifyTokenCookie(r.Cookie(COOKIE_NAME)) {
+		answ.Text = "NOT_AUTHORISED"
+		b, _ := json.Marshal(answ)
+		w.WriteHeader(NOT_AUTHORISED)
+		fmt.Fprintf(w, string(b))
+		return
+	}
+
+	c, _ := r.Cookie(COOKIE_NAME)
+	log.Println(c.Value)
+	arr, err := dbInterface.GetNewMessages(users[c.Value].Id, r.URL.Query().Get("chat_id"))
+	if err != nil {
+		answ.Text = err.Error()
+		b, _ := json.Marshal(answ)
+		w.WriteHeader(OK)
+		fmt.Fprintf(w, string(b))
+		return
+	}
+	b, _ := json.Marshal(arr)
+	w.WriteHeader(OK)
+	fmt.Fprintf(w, string(b))
+}
+
 //Получаем порт и интерфейс для работы с бд
 func InitServer(port string, db *databaseInterface.DatabaseInterface) {
 	mrand.Seed(time.Now().Unix())
@@ -907,13 +911,14 @@ func InitServer(port string, db *databaseInterface.DatabaseInterface) {
 	go timeoutTokens() //Запускаем функцию на проверку актуальности токенов в отдельном потоке
 
 	//GET Ручки
-	http.HandleFunc("/usersChats", getUsersChats) //Получить чаты пользователя
-	http.HandleFunc("/chatUsers", getUsersOfChat) //Получить пользователей чата
-	http.HandleFunc("/chat", getChatLite)         //Получить информацию чата
-	http.HandleFunc("/messages", getMessages)     //Получить сообщения чата
-	http.HandleFunc("/chatKey", getChatKey)       //Получить ключ чата
-	http.HandleFunc("/user", getUser)             //Получить ключ чата
-	http.HandleFunc("/ws", webSocket)             //Получить ключ чата
+	http.HandleFunc("/usersChats", getUsersChats)   //Получить чаты пользователя
+	http.HandleFunc("/chatUsers", getUsersOfChat)   //Получить пользователей чата
+	http.HandleFunc("/chat", getChatLite)           //Получить информацию чата
+	http.HandleFunc("/messages", getMessages)       //Получить сообщения чата
+	http.HandleFunc("/newMessages", getNewMessages) //Получить новые сообщения чата
+	http.HandleFunc("/chatKey", getChatKey)         //Получить ключ чата
+	http.HandleFunc("/user", getUser)               //Получить пользователя
+	http.HandleFunc("/ws", webSocket)               //Подключиться по вебсокету
 	//TODO: гет-ручка обновления токена
 
 	//POST Ручки
